@@ -65,6 +65,8 @@ declare module 'vue' {
     IframeNodeView: typeof import('./src/components/TextEditor/extensions/iframe/IframeNodeView.vue')['default']
     ImageGroupNodeView: typeof import('./src/components/TextEditor/extensions/image-group/ImageGroupNodeView.vue')['default']
     ImageGroupUploadDialog: typeof import('./src/components/TextEditor/extensions/image-group/ImageGroupUploadDialog.vue')['default']
+    ImageViewer: typeof import('./src/components/ImageViewer/ImageViewer.vue')['default']
+    'ImageViewer.story': typeof import('./src/components/ImageViewer/ImageViewer.story.vue')['default']
     ImageViewerModal: typeof import('./src/components/TextEditor/components/ImageViewerModal.vue')['default']
     Input: typeof import('./src/components/Input.vue')['default']
     InputDescription: typeof import('./src/components/InputLabeling/InputDescription.vue')['default']

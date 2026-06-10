@@ -1,8 +1,38 @@
-import { ref, watch, onMounted, onUnmounted, type Ref } from 'vue'
+import { ref, watch, onUnmounted, type Ref } from 'vue'
 
 interface UseZoomPanOptions {
   containerRef: Ref<HTMLElement | null>
   isEnabled: Ref<boolean>
+}
+
+interface ZoomAroundPointOptions {
+  currentZoom: number
+  nextZoom: number
+  panPosition: { x: number; y: number }
+  cursor: { x: number; y: number }
+  container: { left: number; top: number; width: number; height: number }
+}
+
+export function calculateZoomAroundPoint({
+  currentZoom,
+  nextZoom,
+  panPosition,
+  cursor,
+  container,
+}: ZoomAroundPointOptions) {
+  if (currentZoom <= 0 || nextZoom <= 0) return panPosition
+
+  const currentScale = currentZoom / 100
+  const nextScale = nextZoom / 100
+  const cursorOffset = {
+    x: cursor.x - (container.left + container.width / 2),
+    y: cursor.y - (container.top + container.height / 2),
+  }
+
+  return {
+    x: panPosition.x + cursorOffset.x * (1 / nextScale - 1 / currentScale),
+    y: panPosition.y + cursorOffset.y * (1 / nextScale - 1 / currentScale),
+  }
 }
 
 export function useZoomPan({ containerRef, isEnabled }: UseZoomPanOptions) {
@@ -11,6 +41,7 @@ export function useZoomPan({ containerRef, isEnabled }: UseZoomPanOptions) {
   const isMousePanning = ref(false)
   const startMousePanCoords = ref({ x: 0, y: 0 })
   const initialPanPositionOnGestureStart = ref({ x: 0, y: 0 })
+  let removeDocumentPanListeners: (() => void) | null = null
 
   const snapThresholdLower = 90
   const snapThresholdUpper = 110
@@ -48,6 +79,8 @@ export function useZoomPan({ containerRef, isEnabled }: UseZoomPanOptions) {
     startMousePanCoords.value = { x: event.clientX, y: event.clientY }
     initialPanPositionOnGestureStart.value = { ...panPosition.value }
 
+    removeDocumentPanListeners?.()
+
     const handlePanMove = (moveEvent: MouseEvent) => {
       if (!isMousePanning.value) return
       const deltaX = moveEvent.clientX - startMousePanCoords.value.x
@@ -61,13 +94,15 @@ export function useZoomPan({ containerRef, isEnabled }: UseZoomPanOptions) {
     }
 
     const handlePanEnd = () => {
-      if (isMousePanning.value) {
-        isMousePanning.value = false
-        document.removeEventListener('mousemove', handlePanMove)
-        document.removeEventListener('mouseup', handlePanEnd)
-      }
+      isMousePanning.value = false
+      removeDocumentPanListeners?.()
     }
 
+    removeDocumentPanListeners = () => {
+      document.removeEventListener('mousemove', handlePanMove)
+      document.removeEventListener('mouseup', handlePanEnd)
+      removeDocumentPanListeners = null
+    }
     document.addEventListener('mousemove', handlePanMove)
     document.addEventListener('mouseup', handlePanEnd)
   }
@@ -75,7 +110,8 @@ export function useZoomPan({ containerRef, isEnabled }: UseZoomPanOptions) {
   function handleWheel(event: WheelEvent) {
     if (!isEnabled.value) return
 
-    if (containerRef.value?.contains(event.target as Node)) {
+    const container = containerRef.value
+    if (container?.contains(event.target as Node)) {
       event.preventDefault()
 
       let dampingFactor = event.ctrlKey ? 0.5 : 0.2
@@ -94,28 +130,40 @@ export function useZoomPan({ containerRef, isEnabled }: UseZoomPanOptions) {
         }
       }
 
-      zoomLevel.value = clampedZoom
+      if (clampedZoom !== currentZoom) {
+        panPosition.value = calculateZoomAroundPoint({
+          currentZoom,
+          nextZoom: clampedZoom,
+          panPosition: panPosition.value,
+          cursor: { x: event.clientX, y: event.clientY },
+          container: container.getBoundingClientRect(),
+        })
+        zoomLevel.value = clampedZoom
+      }
     }
   }
 
-  onMounted(() => {
-    const container = containerRef.value
-    if (container) {
-      container.addEventListener('wheel', handleWheel, {
+  watch(
+    containerRef,
+    (container, previousContainer) => {
+      previousContainer?.removeEventListener('wheel', handleWheel, {
+        capture: true,
+      })
+      container?.addEventListener('wheel', handleWheel, {
         passive: false,
         capture: true,
       })
-    }
-  })
+    },
+    { immediate: true },
+  )
 
   onUnmounted(() => {
     const container = containerRef.value
     if (container) {
       container.removeEventListener('wheel', handleWheel, { capture: true })
     }
-    if (isMousePanning.value) {
-      isMousePanning.value = false
-    }
+    removeDocumentPanListeners?.()
+    isMousePanning.value = false
   })
 
   return {
