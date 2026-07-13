@@ -18,7 +18,7 @@
         index === selectedIndex ? 'bg-surface-gray-2' : '',
         itemClass,
       ]"
-      @click="selectItem(index)"
+      @pointerdown.prevent="selectItem(index)"
       @mouseover="selectedIndex = index"
     >
       <slot :item="item" :index="index">
