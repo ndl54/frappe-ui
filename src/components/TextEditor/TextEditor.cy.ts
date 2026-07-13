@@ -124,6 +124,31 @@ describe('<TextEditor />', () => {
     // Verify suggestion list is hidden
     cy.get('button:contains("John Doe")').should('not.exist')
   })
+
+  it('selects mentions with the suggestion menu pointer interaction', () => {
+    const users = [
+      { id: '1', label: 'John Doe' },
+      { id: '2', label: 'Jane Smith' },
+    ]
+
+    cy.mount(TextEditor, {
+      props: {
+        mentions: users,
+      },
+    })
+
+    cy.get('.ProseMirror').type('Hi @')
+    cy.get('button').contains('Jane Smith').click()
+
+    cy.get('.ProseMirror span.mention').should(
+      'have.attr',
+      'data-label',
+      'Jane Smith',
+    )
+    cy.get('.ProseMirror').should('contain.text', '@Jane Smith')
+    cy.get('button:contains("Jane Smith")').should('not.exist')
+  })
+
   it('supports tags via #', () => {
     const tags = [{ label: 'Bug' }, { label: 'Feature' }]
 
