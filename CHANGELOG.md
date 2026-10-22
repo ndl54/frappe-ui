@@ -1,5 +1,12 @@
 # frappe-ui
 
+## 1.0.3
+
+### Patch Changes
+
+- ImageViewer: preserve the SGT gallery and zoom behavior with v1 portal targets
+  and icons (fix).
+
 ## 1.0.2
 
 ### Patch Changes
