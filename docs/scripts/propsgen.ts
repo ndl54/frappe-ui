@@ -2,10 +2,25 @@ import * as url from 'url'
 import path from 'path'
 import fs from 'fs'
 
+import ts from 'typescript'
 import type { MetaCheckerOptions } from 'vue-component-meta'
 import { createChecker } from 'vue-component-meta'
 
+import {
+  diffApiTables,
+  formatDifferences,
+  parseApiTables,
+  summarizeDifference,
+} from './api-tables'
+import { createSourceOrder } from './source-order'
+
 const __dirname = url.fileURLToPath(new URL('.', import.meta.url))
+const REPO_ROOT = path.join(__dirname, '../..')
+
+// `--check` compares the committed tables against a fresh run instead of
+// rewriting them. It reports an entry that was added, removed or whose type,
+// default or description changed, and ignores the order of the rows.
+const isCheck = process.argv.slice(2).includes('--check')
 
 const checkerOptions: MetaCheckerOptions = {
   forceUseTs: true,
@@ -19,18 +34,251 @@ const tsconfigChecker = createChecker(
   checkerOptions,
 )
 
+const EXPERIMENTAL_ROOT = path.join(__dirname, '../../experimental')
+
 const SOURCE_ROOTS = [
   path.join(__dirname, '../../src/components'),
-  path.join(__dirname, '../../frappe'),
+  path.join(__dirname, '../../src/molecules'),
+  // `src` itself, for families that sit directly under it (src/charts).
+  path.join(__dirname, '../../src'),
+  EXPERIMENTAL_ROOT,
 ]
+
+// Folders whose components are documented on another folder's page, keyed by
+// the folder without a page. Their tables go into the page folder's
+// `<folder>.api.md`: a page can include only one generated file, because each
+// one opens a `<script setup>`.
+const DOCUMENTED_ON: Record<string, string> = { MobileNav: 'MobileShell' }
+
 const AUTO_STORIES_START = '<!-- AUTO-GENERATED STORIES START -->'
 const AUTO_STORIES_END = '<!-- AUTO-GENERATED STORIES END -->'
 
+/**
+ * Drops the `| undefined` an optional prop or an optional object member
+ * carries, because the `?` already says it. Replacing the first match dropped
+ * the wrong one: `string | (Error & { messages?: string[] | undefined })` has
+ * two, and only the outer one belongs to the prop.
+ */
 function parseTypeStr(type: string) {
-  if (type.includes('undefined')) {
-    return type.replace(' | undefined', '').trim()
+  return type.replace(/ \| undefined(?=$|[;,)}\]])/g, '').trim()
+}
+
+// Names Vue's language tooling gives the emit types it generates for an SFC:
+// `__VLS_ModelEmit` holds one entry per `defineModel()`, `__VLS_Emit` holds the
+// `defineEmits<T>()` type argument.
+const MODEL_EMIT_TYPE = '__VLS_ModelEmit'
+const DECLARED_EMIT_TYPE = '__VLS_Emit'
+
+// Mirrors vue-component-meta's own type printing so recovered types read
+// exactly like the ones it resolves itself.
+function printType(typeChecker: ts.TypeChecker, type: ts.Type) {
+  const str = typeChecker.typeToString(
+    type,
+    undefined,
+    ts.TypeFormatFlags.UseFullyQualifiedType | ts.TypeFormatFlags.NoTruncation,
+  )
+  return str.includes('import(') ? str.replace(/import\(.*?\)\./g, '') : str
+}
+
+/**
+ * Payload types and descriptions for a component's emits, read off the emit
+ * types Vue generates for the SFC rather than off `$emit`.
+ *
+ * vue-component-meta derives each emit's payload from the call signatures of
+ * `$emit`, which Vue builds from `__VLS_ModelEmit & __VLS_Emit`. An event
+ * declared *both* by `defineModel()` and in the `defineEmits<T>()` type
+ * argument therefore ends up with an intersection of two tuples as its payload,
+ * and TypeScript cannot infer named rest args back out of a tuple intersection
+ * — the signature collapses to `(event, ...args: unknown[])` and the docs lose
+ * the real type. It reports no description for an emit at all. Both survive
+ * intact in the generated file, so read them straight from there.
+ *
+ * `defineEmits<T>()` is applied last: when both declare an event, the
+ * hand-written interface is the documented contract.
+ */
+function getDeclaredEmits(vuePath: string) {
+  const emits = new Map<string, { type: string; description: string }>()
+  const program = tsconfigChecker.getProgram()
+  const sourceFile = program?.getSourceFile(vuePath)
+  if (!program || !sourceFile) return emits
+
+  const typeChecker = program.getTypeChecker()
+
+  for (const aliasName of [MODEL_EMIT_TYPE, DECLARED_EMIT_TYPE]) {
+    const declaration = sourceFile.statements.find(
+      (statement): statement is ts.TypeAliasDeclaration =>
+        ts.isTypeAliasDeclaration(statement) &&
+        statement.name.text === aliasName,
+    )
+    if (!declaration) continue
+
+    const symbol = typeChecker.getSymbolAtLocation(declaration.name)
+    const emitsType = symbol
+      ? typeChecker.getDeclaredTypeOfSymbol(symbol)
+      : typeChecker.getTypeAtLocation(declaration.type)
+
+    for (const emit of emitsType.getProperties()) {
+      const payload = typeChecker.getTypeOfSymbolAtLocation(emit, declaration)
+      emits.set(emit.getName(), {
+        type: printType(typeChecker, payload),
+        description: ts
+          .displayPartsToString(emit.getDocumentationComment(typeChecker))
+          .trim(),
+      })
+    }
   }
-  return type
+
+  return emits
+}
+
+// The variable Vue's language tooling binds the `defineExpose()` argument to.
+// With a type argument it is declared as that type (`let __VLS_exposed!: T`);
+// without one it is the object itself.
+const EXPOSED_VAR = '__VLS_exposed'
+
+type JsDocTag = { name: string; text?: string }
+
+function findNode<T extends ts.Node>(
+  root: ts.Node,
+  match: (node: ts.Node) => node is T,
+): T | undefined {
+  let found: T | undefined
+  const visit = (node: ts.Node) => {
+    if (found) return
+    if (match(node)) found = node
+    else ts.forEachChild(node, visit)
+  }
+  visit(root)
+  return found
+}
+
+/**
+ * JSDoc written on the properties of the object handed to `defineExpose`, by
+ * property name. Components that share an exposed type (every input exposes
+ * `InputExposed`) use it to say what their own member does, so it wins over
+ * the shared type's description.
+ */
+function getExposeLiteralDocs(
+  sourceFile: ts.SourceFile,
+  typeChecker: ts.TypeChecker,
+) {
+  const docs = new Map<string, { description: string; tags: JsDocTag[] }>()
+
+  const call = findNode(
+    sourceFile,
+    (node): node is ts.CallExpression =>
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'defineExpose',
+  )
+  let argument = call?.arguments[0]
+
+  // `defineExpose(exposed)`: follow the identifier to the object it names.
+  if (argument && ts.isIdentifier(argument)) {
+    const declaration =
+      typeChecker.getSymbolAtLocation(argument)?.valueDeclaration
+    argument =
+      declaration && ts.isVariableDeclaration(declaration)
+        ? declaration.initializer
+        : undefined
+  }
+  if (!argument || !ts.isObjectLiteralExpression(argument)) return docs
+
+  // Read the comment off the property node. Its symbol would not do: a
+  // shorthand property (`{ focus }`) resolves to the local function, whose
+  // comment describes the implementation.
+  for (const property of argument.properties) {
+    if (!property.name || !ts.isIdentifier(property.name)) continue
+    const jsDoc = ts.getJSDocCommentsAndTags(property).find(ts.isJSDoc)
+    if (!jsDoc) continue
+    docs.set(property.name.text, {
+      description: ts.getTextOfJSDocComment(jsDoc.comment)?.trim() ?? '',
+      tags: (jsDoc.tags ?? []).map((tag) => ({
+        name: tag.tagName.text,
+        text: ts.getTextOfJSDocComment(tag.comment),
+      })),
+    })
+  }
+
+  return docs
+}
+
+// Vue unwraps a ref handed to `defineExpose` at the proxy boundary, so a caller
+// reads the ref's value. Every ref type carries Vue's `RefSymbol` brand.
+function unwrapRef(
+  typeChecker: ts.TypeChecker,
+  type: ts.Type,
+  location: ts.Node,
+) {
+  const isRef = type
+    .getProperties()
+    .some((property) => property.getName().startsWith('__@RefSymbol'))
+  const value = type.getProperty('value')
+  return isRef && value
+    ? typeChecker.getTypeOfSymbolAtLocation(value, location)
+    : type
+}
+
+/**
+ * The members a template ref on the component can reach: what it hands
+ * `defineExpose`, read off the type Vue generates for it.
+ *
+ * vue-component-meta also reports exposed members, but it drops any whose name
+ * matches a prop. Popover's `open()` method shares its name with the `open`
+ * prop, so reading the generated type directly is the only way to keep it.
+ *
+ * A member tagged `@internal` is left out: it is there for another part of the
+ * library, not for the component's users.
+ */
+function getExposed(vuePath: string) {
+  const program = tsconfigChecker.getProgram()
+  const sourceFile = program?.getSourceFile(vuePath)
+  if (!program || !sourceFile) return []
+
+  const typeChecker = program.getTypeChecker()
+  const declaration = findNode(
+    sourceFile,
+    (node): node is ts.VariableDeclaration =>
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === EXPOSED_VAR,
+  )
+  if (!declaration) return []
+
+  const literalDocs = getExposeLiteralDocs(sourceFile, typeChecker)
+  const exposedType = typeChecker.getTypeAtLocation(declaration.name)
+
+  return exposedType.getProperties().flatMap((member) => {
+    const literal = literalDocs.get(member.getName())
+    const tags: JsDocTag[] =
+      literal?.tags ??
+      member.getJsDocTags(typeChecker).map((tag) => ({
+        name: tag.name,
+        text: tag.text ? ts.displayPartsToString(tag.text) : undefined,
+      }))
+    if (tags.some((tag) => tag.name === 'internal')) return []
+
+    const type = unwrapRef(
+      typeChecker,
+      typeChecker.getTypeOfSymbolAtLocation(member, declaration),
+      declaration,
+    )
+    const printed = printType(typeChecker, type)
+
+    return withOptional({
+      name: member.getName(),
+      description:
+        literal?.description ||
+        ts
+          .displayPartsToString(member.getDocumentationComment(typeChecker))
+          .trim(),
+      // The `| undefined` of optional parameters goes, as it does for a prop.
+      // A trailing one stays: it belongs to the member itself (`chart` is
+      // `undefined` until the first draw).
+      type: printed.replace(/ \| undefined(?=[;,)}\]])/g, ''),
+      deprecated: getDeprecation(tags),
+    })
+  })
 }
 
 // Return the `@deprecated` message, `true` if the tag is present without
@@ -96,11 +344,11 @@ ${indent}]`
 
     return `{
 ${entries
-      .map(
-        ([key, itemValue]) =>
-          `${nextIndent}${formatObjectKey(key)}: ${toVueExpression(itemValue, indentLevel + 1)}`,
-      )
-      .join(',\n')}
+  .map(
+    ([key, itemValue]) =>
+      `${nextIndent}${formatObjectKey(key)}: ${toVueExpression(itemValue, indentLevel + 1)}`,
+  )
+  .join(',\n')}
 ${indent}}`
   }
 
@@ -186,22 +434,32 @@ function camelCase(name: string) {
   return name.charAt(0).toLowerCase() + name.slice(1)
 }
 
-function extractTableData(name: string, data: any) {
-  const props = data.props
-    .filter((x: any) => !x.global)
+function extractTableData(name: string, data: any, vuePath: string) {
+  // The payload is only consulted for emits vue-component-meta could not
+  // resolve, so components it already types correctly keep their existing
+  // output. The description always comes from here — it reports none.
+  const declaredEmits = getDeclaredEmits(vuePath)
+  const sourceOrder = createSourceOrder(tsconfigChecker.getProgram()!)
+
+  const props = sourceOrder
+    .sortByDeclaration(data.props.filter((x: any) => !x.global))
     .map((x: any) =>
       withOptional({
         name: x.name,
         description: x.description,
         required: x.required,
-        type: parseTypeStr(x.type),
-        default: x.default,
+        // Only a prop's type is ever a union at the top level; a slot's is an
+        // object and an emit's is a tuple.
+        type: sourceOrder.orderUnion(parseTypeStr(x.type), x),
+        // An explicit `= undefined` is not a default — the docs table renders
+        // the string as a literal "undefined" in the Default column.
+        default: x.default === 'undefined' ? undefined : x.default,
         deprecated: getDeprecation(x.tags),
       }),
     )
 
-  const slots = data.slots
-    .filter((x: any) => !x.global)
+  const slots = sourceOrder
+    .sortByDeclaration(data.slots.filter((x: any) => !x.global))
     .map((x: any) =>
       withOptional({
         name: x.name,
@@ -211,28 +469,38 @@ function extractTableData(name: string, data: any) {
       }),
     )
 
-  const emits = data.events
-    .filter((x: any) => !x.global)
+  const emits = sourceOrder
+    .sortByDeclaration(data.events.filter((x: any) => !x.global))
     .map((x: any) =>
       withOptional({
         name: x.name,
-        description: getEventDescription(x.name, x.description),
-        type: x.type,
+        description: getEventDescription(
+          x.name,
+          x.description || declaredEmits.get(x.name)?.description,
+        ),
+        type:
+          x.type === 'unknown[]'
+            ? (declaredEmits.get(x.name)?.type ?? x.type)
+            : x.type,
         deprecated: getDeprecation(x.tags),
       }),
     )
 
-  return { name, props, slots, emits }
+  const exposed = getExposed(vuePath)
+
+  return { name, props, slots, emits, exposed }
 }
 
-type ComponentMeta = ReturnType<typeof extractTableData>
+// `folder` is the component's own folder, which differs from the folder whose
+// file it is written to when the component is documented on another page.
+type ComponentMeta = ReturnType<typeof extractTableData> & { folder: string }
 
 // Generate one meta file per folder. Multi-component folders (e.g.
 // DatePicker, which also exports DateTimePicker and DateRangePicker) emit
 // a single file with all sibling components — required because each Vue
 // SFC can only have one `<script setup>`, and doc pages include the meta
 // file inline.
-function genFolderMetaTable(folder: string, components: ComponentMeta[]) {
+function genFolderMetaTable(components: ComponentMeta[]) {
   const multi = components.length > 1
   const scriptLines = [
     '<!-- Auto Generated by scripts/propsgen.ts -->',
@@ -241,16 +509,27 @@ function genFolderMetaTable(folder: string, components: ComponentMeta[]) {
     "  import SlotsTable from '@/components/Docs/SlotsTable.vue'",
     "  import EmitsTable from '@/components/Docs/EmitsTable.vue'",
   ]
+  if (components.some((c) => c.exposed.length > 0)) {
+    scriptLines.push(
+      "  import ExposedTable from '@/components/Docs/ExposedTable.vue'",
+    )
+  }
 
   const constNames = (componentName: string) => {
     if (!multi) {
-      return { props: 'propsData', slots: 'slotsData', emits: 'emitsData' }
+      return {
+        props: 'propsData',
+        slots: 'slotsData',
+        emits: 'emitsData',
+        exposed: 'exposedData',
+      }
     }
     const prefix = camelCase(componentName)
     return {
       props: `${prefix}Props`,
       slots: `${prefix}Slots`,
       emits: `${prefix}Emits`,
+      exposed: `${prefix}Exposed`,
     }
   }
 
@@ -265,22 +544,27 @@ function genFolderMetaTable(folder: string, components: ComponentMeta[]) {
     if (c.emits.length > 0) {
       scriptLines.push(`\n  const ${names.emits} = ${arrToExpression(c.emits)}`)
     }
+    if (c.exposed.length > 0) {
+      scriptLines.push(
+        `\n  const ${names.exposed} = ${arrToExpression(c.exposed)}`,
+      )
+    }
   }
 
   scriptLines.push('</script>')
 
-  let markupStr = `${scriptLines.join('\n')}\n`
+  let markupStr = ''
 
-  const hasAnyAcross = components.some(
-    (c) => c.props.length || c.slots.length || c.emits.length,
-  )
+  const hasAny = (c: ComponentMeta) =>
+    c.props.length || c.slots.length || c.emits.length || c.exposed.length
+
+  const hasAnyAcross = components.some(hasAny)
   if (multi && hasAnyAcross) {
     markupStr += `## API Reference\n\n`
   }
 
   for (const c of components) {
-    const hasAny = c.props.length || c.slots.length || c.emits.length
-    if (!hasAny) continue
+    if (!hasAny(c)) continue
 
     if (multi) {
       markupStr += `### ${c.name}\n\n`
@@ -289,20 +573,47 @@ function genFolderMetaTable(folder: string, components: ComponentMeta[]) {
     }
 
     const names = constNames(c.name)
-    const folderAttr = folder !== c.name ? ` folder="${folder}"` : ''
+    const folderAttr = c.folder !== c.name ? ` folder="${c.folder}"` : ''
 
     if (c.props.length > 0) {
-      markupStr += `<PropsTable${folderAttr} name="${c.name}" :data="${names.props}"/> \n\n`
+      markupStr += `<PropsTable${folderAttr} name="${c.name}" :data="${names.props}"/>\n\n`
     }
     if (c.slots.length > 0) {
-      markupStr += `<SlotsTable :data="${names.slots}"/> \n\n`
+      markupStr += `<SlotsTable :data="${names.slots}"/>\n\n`
     }
     if (c.emits.length > 0) {
-      markupStr += `<EmitsTable :data="${names.emits}"/> \n\n`
+      markupStr += `<EmitsTable :data="${names.emits}"/>\n\n`
+    }
+    if (c.exposed.length > 0) {
+      markupStr += `<ExposedTable :data="${names.exposed}"/>\n\n`
     }
   }
 
-  return markupStr
+  // The output has to match what Prettier would write. `lint-staged` runs
+  // `prettier --write` over `*.md`, so a trailing space or a missing blank
+  // line here gets rewritten by the next commit that touches the file, and
+  // the generated files and the generator drift apart with nothing to say so.
+  const scriptStr = scriptLines.join('\n')
+  const bodyStr = markupStr.trimEnd()
+  return bodyStr ? `${scriptStr}\n\n${bodyStr}\n` : `${scriptStr}\n`
+}
+
+function pascalCase(name: string) {
+  return name.charAt(0).toUpperCase() + name.slice(1)
+}
+
+// A folder opts into generated docs by carrying its own docs page: either a
+// single colocated `<folder>.md`, or a `docs/` directory of per-component
+// pages (src/charts). Folders documented by hand elsewhere (editor) carry
+// neither, which keeps them out of `--all` runs.
+function hasDocsPages(rootDir: string, folder: string) {
+  if (fs.existsSync(path.join(rootDir, folder, `${folder}.md`))) return true
+
+  const pagesDir = path.join(rootDir, folder, 'docs')
+  if (!fs.existsSync(pagesDir)) return false
+  return fs
+    .readdirSync(pagesDir)
+    .some((file) => file.endsWith('.md') && !file.endsWith('.api.md'))
 }
 
 function getAvailableComponents(rootDir: string) {
@@ -312,7 +623,25 @@ function getAvailableComponents(rootDir: string) {
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .filter((name) => {
-      return fs.existsSync(path.join(rootDir, name, `${name}.vue`))
+      // Molecule folders are lowercase (src/molecules/list → List.vue).
+      if (name !== pascalCase(name)) {
+        if (!hasDocsPages(rootDir, name)) return false
+        // The family's public SFCs are either one named after the folder
+        // (src/molecules/list → List.vue) or a set re-exported from its
+        // index (src/charts → BarChart.vue, LineChart.vue, …).
+        return (
+          fs.existsSync(path.join(rootDir, name, `${pascalCase(name)}.vue`)) ||
+          getPublicComponentsFromIndex(rootDir, name).length > 0
+        )
+      }
+      if (!fs.existsSync(path.join(rootDir, name, `${name}.vue`))) return false
+      // Experimental exports opt in the same way: most of them are documented
+      // in prose on the Experimental overview page and have no page of their
+      // own to render the generated tables into.
+      if (rootDir === EXPERIMENTAL_ROOT) {
+        return hasDocsPages(rootDir, name)
+      }
+      return true
     })
     .sort((a, b) => a.localeCompare(b))
 }
@@ -320,19 +649,26 @@ function getAvailableComponents(rootDir: string) {
 // A folder's `index.ts` may re-export additional public sub-components
 // alongside the primary one (e.g. DatePicker also exports DateRangePicker
 // and DateTimePicker). Each public sub-component gets its own meta file.
-function getPublicComponentsFromIndex(rootDir: string, folder: string): string[] {
+//
+// The SFC may sit in a sub-directory of the folder (src/charts exports its
+// chrome from `./components/`), so the match keeps the whole relative path and
+// only the basename has to equal the exported name.
+function getPublicComponentsFromIndex(
+  rootDir: string,
+  folder: string,
+): { name: string; relativePath: string }[] {
   const indexPath = path.join(rootDir, folder, 'index.ts')
   if (!fs.existsSync(indexPath)) return []
 
   const content = fs.readFileSync(indexPath, 'utf8')
   const re =
-    /export\s*\{\s*default\s+as\s+(\w+)\s*\}\s*from\s*['"]\.\/(\w+)\.vue['"]/g
-  const names = new Set<string>()
+    /export\s*\{\s*default\s+as\s+(\w+)\s*\}\s*from\s*['"]\.\/((?:[\w-]+\/)*(\w+))\.vue['"]/g
+  const found = new Map<string, string>()
   let m: RegExpExecArray | null
   while ((m = re.exec(content))) {
-    if (m[1] === m[2]) names.add(m[1])
+    if (m[1] === m[3]) found.set(m[1], `${m[2]}.vue`)
   }
-  return [...names]
+  return [...found].map(([name, relativePath]) => ({ name, relativePath }))
 }
 
 type Documentable = {
@@ -343,24 +679,32 @@ type Documentable = {
   siblings: string[]
 }
 
+// The folder whose page documents this component.
+const pageFolderOf = (d: Documentable) => DOCUMENTED_ON[d.folder] ?? d.folder
+
 function getDocumentables(): Documentable[] {
   const docs: Documentable[] = []
   for (const rootDir of SOURCE_ROOTS) {
     for (const folder of getAvailableComponents(rootDir)) {
+      const primary = pascalCase(folder)
       const fromIndex = getPublicComponentsFromIndex(rootDir, folder)
-      const candidates = fromIndex.length > 0 ? fromIndex : [folder]
-      const names = (
-        candidates.includes(folder) ? candidates : [folder, ...candidates]
-      ).filter((name) =>
-        fs.existsSync(path.join(rootDir, folder, `${name}.vue`)),
+      const primaryEntry = { name: primary, relativePath: `${primary}.vue` }
+      const candidates = fromIndex.length > 0 ? fromIndex : [primaryEntry]
+      const entries = (
+        candidates.some((c) => c.name === primary)
+          ? candidates
+          : [primaryEntry, ...candidates]
+      ).filter((entry) =>
+        fs.existsSync(path.join(rootDir, folder, entry.relativePath)),
       )
+      const names = entries.map((entry) => entry.name)
 
-      for (const name of names) {
+      for (const entry of entries) {
         docs.push({
           folder,
-          name,
+          name: entry.name,
           rootDir,
-          vuePath: path.join(rootDir, folder, `${name}.vue`),
+          vuePath: path.join(rootDir, folder, entry.relativePath),
           siblings: names,
         })
       }
@@ -405,11 +749,14 @@ function replaceAutoGeneratedSection(content: string, replacement: string) {
   return `${before}${replacement}${after}`
 }
 
-function syncComponentDocsStories(rootDir: string, componentName: string) {
+// The story list comes straight off the filesystem, so it is the same on every
+// run — unlike the emit rows, which the TypeScript checker orders. `null` means
+// the page is already up to date, or has no auto-generated section at all.
+function getDocsStoriesUpdate(rootDir: string, componentName: string) {
   const docsPath = path.join(rootDir, componentName, `${componentName}.md`)
 
   if (!fs.existsSync(docsPath)) {
-    return
+    return null
   }
 
   const content = fs.readFileSync(docsPath, 'utf8')
@@ -417,17 +764,15 @@ function syncComponentDocsStories(rootDir: string, componentName: string) {
     !content.includes(AUTO_STORIES_START) ||
     !content.includes(AUTO_STORIES_END)
   ) {
-    return
+    return null
   }
 
   const storiesMarkup = getStoryPreviewMarkup(rootDir, componentName)
   const replacement = `${AUTO_STORIES_START}\n${storiesMarkup}\n${AUTO_STORIES_END}`
   const nextContent = replaceAutoGeneratedSection(content, replacement)
 
-  if (nextContent !== content) {
-    fs.writeFileSync(docsPath, nextContent)
-    console.log(`Synced ${componentName} docs stories`)
-  }
+  if (nextContent === content) return null
+  return { docsPath, nextContent }
 }
 
 function parseRequestedFolders(
@@ -435,7 +780,7 @@ function parseRequestedFolders(
   folders: string[],
 ) {
   const byLowerName = new Map(
-    documentables.map((d) => [d.name.toLowerCase(), d.folder]),
+    documentables.map((d) => [d.name.toLowerCase(), pageFolderOf(d)]),
   )
 
   const args = process.argv.slice(2).filter((arg) => arg !== '--')
@@ -478,41 +823,158 @@ function parseRequestedFolders(
 }
 
 const documentables = getDocumentables()
-const folderOrder = [...new Set(documentables.map((d) => d.folder))]
+const folderOrder = [...new Set(documentables.map(pageFolderOf))]
 const selectedFolders = parseRequestedFolders(documentables, folderOrder)
 const docsByFolder = new Map<string, Documentable[]>()
 for (const d of documentables) {
-  const list = docsByFolder.get(d.folder) ?? []
+  const list = docsByFolder.get(pageFolderOf(d)) ?? []
   list.push(d)
-  docsByFolder.set(d.folder, list)
+  docsByFolder.set(pageFolderOf(d), list)
 }
 
-console.log(`Generating docs meta for: ${selectedFolders.join(', ')}`)
+// Props and union members are put back into source order (see `source-order`),
+// so they no longer move between runs. Emits still can: an event declared by
+// `defineModel()` is declared in Vue's own types, and where that lands relative
+// to the ones from `defineEmits<T>()` is the checker's call. The committed
+// tables are the full run's output, so a partial run is for iterating, not for
+// committing. CI compares the rows themselves and ignores their order
+// (`--check`), so a committed partial run does not fail the build.
+if (!isCheck && selectedFolders.length !== folderOrder.length) {
+  console.warn(
+    'Note: this is a partial run. Run `yarn docs:gen` with no arguments before committing.',
+  )
+}
+
+console.log(
+  `${isCheck ? 'Checking' : 'Generating'} docs meta for: ${selectedFolders.join(', ')}`,
+)
+
+const staleFiles: string[] = []
+
+function reportStale(relativePath: string, report: string) {
+  staleFiles.push(relativePath)
+  console.error(`\n${relativePath}\n${report}`)
+}
+
+function annotate(relativePath: string, message: string) {
+  if (!process.env.GITHUB_ACTIONS) return
+  // A workflow command is one line: the runner reads `%25`, `%0D` and `%0A`
+  // back as `%`, CR and LF.
+  const escaped = message
+    .replace(/%/g, '%25')
+    .replace(/\r/g, '%0D')
+    .replace(/\n/g, '%0A')
+  console.error(`::error file=${relativePath}::${escaped}`)
+}
+
+function checkMetaFile(
+  folder: string,
+  metaFilePath: string,
+  generated: string,
+) {
+  const relativePath = path.relative(REPO_ROOT, metaFilePath)
+
+  if (!fs.existsSync(metaFilePath)) {
+    reportStale(relativePath, '  the table has never been generated')
+    annotate(relativePath, 'the API table has never been generated')
+    return
+  }
+
+  const committed = fs.readFileSync(metaFilePath, 'utf8')
+  const differences = diffApiTables(
+    parseApiTables(committed, folder),
+    parseApiTables(generated, folder),
+  )
+
+  if (differences.length > 0) {
+    reportStale(relativePath, formatDifferences(differences))
+    for (const difference of differences) {
+      annotate(relativePath, summarizeDifference(difference))
+    }
+  }
+}
+
+function checkStories(rootDir: string, folder: string) {
+  const storiesUpdate = getDocsStoriesUpdate(rootDir, folder)
+  if (storiesUpdate) {
+    const storiesPath = path.relative(REPO_ROOT, storiesUpdate.docsPath)
+    reportStale(storiesPath, '  the story list does not match the story files')
+    annotate(storiesPath, 'the story list does not match the story files')
+  }
+}
 
 selectedFolders.forEach((folder) => {
   try {
     const docs = docsByFolder.get(folder) ?? []
     if (docs.length === 0) return
-    // Primary first, then any sub-components in declaration order.
+    // Primary first, then any sub-components in declaration order, then the
+    // components of folders documented on this page.
     const ordered = [
-      ...docs.filter((d) => d.name === d.folder),
-      ...docs.filter((d) => d.name !== d.folder),
+      ...docs.filter((d) => d.name === pascalCase(folder)),
+      ...docs.filter((d) => d.name !== pascalCase(folder)),
     ]
     const rootDir = ordered[0].rootDir
 
     const components = ordered.map((d) => {
       const meta = tsconfigChecker.getComponentMeta(d.vuePath)
-      return extractTableData(d.name, meta)
+      return { ...extractTableData(d.name, meta, d.vuePath), folder: d.folder }
     })
 
-    const metaFilePath = path.join(rootDir, folder, `${folder}.api.md`)
-    const str = genFolderMetaTable(folder, components)
-    fs.writeFileSync(metaFilePath, str)
+    // A family that splits its docs one page per component (`<folder>/docs/
+    // <Name>.md`, as src/charts does) gets a `<Name>.api.md` beside each page,
+    // so the tables land under the component they belong to. Components
+    // without a page of their own stay in the single `<folder>.api.md` that
+    // one-page families include.
+    const pagesDir = path.join(rootDir, folder, 'docs')
+    const hasOwnPage = (name: string) =>
+      fs.existsSync(path.join(pagesDir, `${name}.md`))
+
+    const metaFiles = components
+      .filter((c) => hasOwnPage(c.name))
+      .map((component) => ({
+        path: path.join(pagesDir, `${component.name}.api.md`),
+        content: genFolderMetaTable([component]),
+      }))
+
+    const shared = components.filter((c) => !hasOwnPage(c.name))
+    if (shared.length) {
+      metaFiles.push({
+        path: path.join(rootDir, folder, `${folder}.api.md`),
+        content: genFolderMetaTable(shared),
+      })
+    }
+
+    if (isCheck) {
+      for (const file of metaFiles) {
+        checkMetaFile(folder, file.path, file.content)
+      }
+      checkStories(rootDir, folder)
+      return
+    }
+
+    for (const file of metaFiles) {
+      fs.writeFileSync(file.path, file.content)
+    }
     console.log(`Generated ${folder} meta`)
 
-    syncComponentDocsStories(rootDir, folder)
+    const storiesUpdate = getDocsStoriesUpdate(rootDir, folder)
+    if (storiesUpdate) {
+      fs.writeFileSync(storiesUpdate.docsPath, storiesUpdate.nextContent)
+      console.log(`Synced ${folder} docs stories`)
+    }
   } catch (error) {
     console.error('-----------------------------\n', folder, ':', error)
     process.exitCode = 1
   }
 })
+
+if (isCheck) {
+  if (staleFiles.length > 0) {
+    console.error(
+      `\n${staleFiles.length} file(s) are out of date. Run \`yarn docs:gen\` with no arguments and commit the result.`,
+    )
+    process.exitCode = 1
+  } else {
+    console.log('\nThe committed API tables match the source.')
+  }
+}

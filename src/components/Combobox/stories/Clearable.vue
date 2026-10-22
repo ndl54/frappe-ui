@@ -11,7 +11,7 @@ const fields: Field[] = [
     label: 'colour',
     options: ['gray', 'blue', 'green', 'red'],
   },
-  { key: 'size', label: 'size', options: ['sm', 'md', 'lg', 'xl'] },
+  { key: 'size', label: 'size', options: ['xs', 'sm', 'md', 'lg'] },
   { key: 'style', label: 'style', options: ['subtle', 'outline', 'ghost'] },
   {
     key: 'fontSize',
@@ -34,17 +34,17 @@ const values = reactive<Record<string, string>>({
 })
 
 const colourSwatch: Record<string, string> = {
-  gray: 'bg-surface-gray-5',
+  gray: 'bg-surface-gray-8',
   blue: 'bg-surface-blue-3',
   green: 'bg-surface-green-3',
-  red: 'bg-surface-red-5',
+  red: 'bg-surface-red-7',
 }
 
 const sizeDot: Record<string, string> = {
-  sm: 'size-1.5',
-  md: 'size-2',
-  lg: 'size-2.5',
-  xl: 'size-3',
+  xs: 'size-1.5',
+  sm: 'size-2',
+  md: 'size-2.5',
+  lg: 'size-3',
 }
 
 const fontSizePx: Record<string, number> = {
@@ -55,8 +55,10 @@ const fontSizePx: Record<string, number> = {
   '24': 16,
 }
 
-function getOptionValue(item: { value?: string; label: string }) {
-  return item.value ?? item.label
+// Matches both slot option shapes: a selectable option carries `value`, a
+// custom option carries only `label`.
+function getOptionValue(item: { value?: unknown; label: string }) {
+  return String(item.value ?? item.label)
 }
 
 function clear(key: string, event: Event) {
@@ -86,7 +88,7 @@ function clear(key: string, event: Event) {
             <span
               v-if="field.key === 'colour'"
               :class="[
-                'inline-block size-3 rounded-sm',
+                'inline-block size-3 rounded-1',
                 colourSwatch[getOptionValue(item)] ?? 'bg-surface-gray-3',
               ]"
             />
@@ -129,7 +131,7 @@ function clear(key: string, event: Event) {
             type="button"
             aria-label="Clear"
             tabindex="-1"
-            class="grid size-4 place-items-center rounded-sm text-ink-gray-5 opacity-0 hover:bg-surface-gray-3 hover:text-ink-gray-7 group-hover:opacity-100 focus:opacity-100"
+            class="grid size-4 place-items-center rounded-1 text-ink-gray-5 opacity-0 hover:bg-surface-gray-3 hover:text-ink-gray-7 group-hover:opacity-100 focus:opacity-100 [@media(hover:none)]:opacity-100"
             @click="clear(field.key, $event)"
             @pointerdown.stop
           >

@@ -1,47 +1,166 @@
+import type { ComputedRef, InjectionKey, Ref } from 'vue'
+
+/** A node key — the value read from `nodeKey` on each node. */
+export type TreeKey = string | number
+
+/**
+ * A tree node. Carries a display `label`, nested `children`, and a unique id
+ * under the field named by the `nodeKey` prop. Any extra fields are preserved
+ * and passed through to slots.
+ *
+ * A node holds your data only. Expansion state lives outside it, in the
+ * `expanded` model, so the tree never writes to the objects you pass in.
+ */
 export type TreeNode = {
-  label: string
-  children: TreeNode[]
-  // added TreeNode[] due to enforcement that dynamic key types should accommodate all static key types
-  [nodeKey: string]: string | number | TreeNode[]
+  [key: string]: unknown
+  label?: string
+  children?: TreeNode[]
+}
+
+/** Where a dragged node lands relative to the hovered target. */
+export type DropPosition = 'inside' | 'before' | 'after'
+
+/** Context passed to the `move` predicate while dragging. */
+export interface MoveContext {
+  /** The node being dragged. */
+  node: TreeNode
+  /** The node currently hovered as the drop target. */
+  target: TreeNode
+  /** Resolved drop position relative to `target`. */
+  position: DropPosition
+}
+
+/**
+ * The committed move handed to `@drag-end`. `null` is emitted instead when a
+ * drag is cancelled (Escape, or released without a valid landing).
+ */
+export interface DropInfo {
+  /** The moved node. */
+  node: TreeNode
+  /** Key of the previous parent, or `null` if it was a root. */
+  from: TreeKey | null
+  /** Key of the new parent, or `null` when moved to root level. */
+  to: TreeKey | null
+  /** Drop position relative to the target node. */
+  position: DropPosition
+  /** Index the node occupied in its previous parent. */
+  oldIndex: number
+  /** Final index of the node within its new parent's children. */
+  newIndex: number
 }
 
 export interface TreeProps {
   /**
-   * Root tree node to render.
-   * Can contain nested children to form the tree structure.
+   * Forest roots to render. Each node may contain nested children to form the
+   * tree structure.
    */
-  node: TreeNode
+  nodes: TreeNode[]
 
   /**
-   * Unique key used to identify each node.
-   * Usually an id-like property present on every node.
+   * Name of the field that uniquely identifies each node.
+   * @default 'key'
    */
-  nodeKey: string
+  nodeKey?: string
 
   /**
-   * Optional configuration for tree layout and behavior.
+   * Enable drag-and-drop. Nodes can be dragged onto one another to reparent, or
+   * between siblings to reorder.
+   * @default false
    */
-  options?: TreeOptions
+  draggable?: boolean
+
+  /**
+   * Gate a drop while dragging. Receives the live drag context and returns
+   * whether the drop is allowed — a rejected target shows the no-drop cursor and
+   * hides the drop indicator. Built-in guards (drop-on-self, drop-into-own-
+   * descendant) run first, so this only carries your domain rules.
+   */
+  move?: (ctx: MoveContext) => boolean
+
+  /**
+   * Visual style of the indentation guides.
+   * @default 'connectors'
+   */
+  guides?: 'connectors' | 'lines' | 'none'
+
+  /**
+   * Disable all interaction — expand/collapse and drag.
+   * @default false
+   */
+  disabled?: boolean
+
+  /**
+   * Keys of the expanded nodes. Two-way via `v-model:expanded` — the tree
+   * replaces the array as rows toggle and never writes to your nodes. A key
+   * that is absent means that node is collapsed, so the default renders only
+   * the roots.
+   * @default []
+   */
+  expanded?: TreeKey[]
 }
 
-export type TreeOptions = {
-  /**
-   * Height of each tree row (e.g. "32px").
-   */
-  rowHeight?: string
+/** State + callbacks shared from `Tree` down to every recursive `TreeItem`. */
+export interface TreeContext {
+  nodeKey: Ref<string>
+  guides: Ref<'connectors' | 'lines' | 'none'>
+  draggable: Ref<boolean>
+  disabled: Ref<boolean>
 
-  /**
-   * Horizontal indentation per tree level.
-   */
-  indentWidth?: string
+  focusedKey: Ref<TreeKey | null>
 
-  /**
-   * Whether to show vertical indentation guide lines.
-   */
-  showIndentationGuides?: boolean
+  keyOf: (node: TreeNode) => TreeKey
+  labelOf: (node: TreeNode) => string
+  childrenOf: (node: TreeNode) => TreeNode[]
+  hasChildren: (node: TreeNode) => boolean
 
+  isExpanded: (node: TreeNode) => boolean
+  toggle: (node: TreeNode) => void
+  focus: (key: TreeKey) => void
+
+  registerItem: (key: TreeKey, el: HTMLElement) => void
+  unregisterItem: (key: TreeKey) => void
+
+  // Drag-and-drop
+  dragSourceKey: ComputedRef<TreeKey | null>
+  dropTargetKey: ComputedRef<TreeKey | null>
+  dropPosition: ComputedRef<DropPosition | null>
+  onDragStart: (e: DragEvent, node: TreeNode, parent: TreeNode | null) => void
+  onDragOver: (e: DragEvent, node: TreeNode) => void
+  onDragLeave: (node: TreeNode) => void
+  onDrop: (node: TreeNode, parent: TreeNode | null) => void
+  onDragEnd: () => void
+}
+
+export const TreeContextKey: InjectionKey<TreeContext> = Symbol('TreeContext')
+
+/**
+ * What a `<Tree>` template ref exposes. These write the `expanded` model, so
+ * they are programmatic — `disabled`, which freezes user interaction, does not
+ * block them.
+ */
+export interface TreeExposed {
   /**
-   * Whether tree nodes should be collapsed by default.
+   * Opens the node with this key. A key whose children have not loaded yet
+   * opens as soon as they arrive. Like every method here, it works while the
+   * tree is `disabled`.
    */
-  defaultCollapsed?: boolean
+  expand: (key: TreeKey) => void
+  /** Closes the node with this key. */
+  collapse: (key: TreeKey) => void
+  /** Flips the node with this key. */
+  toggle: (key: TreeKey) => void
+  /** Opens every node that has children, keeping any keys already open. */
+  expandAll: () => void
+  /** Closes every node. */
+  collapseAll: () => void
+}
+
+export interface TreeNodeSlotProps {
+  node: TreeNode
+  level: number
+  expanded: boolean
+  hasChildren: boolean
+  focused: boolean
+  disabled: boolean
+  toggle: () => void
 }

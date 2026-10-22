@@ -1,5 +1,5 @@
 <template>
-  <Teleport to="body">
+  <Teleport :to="portalTarget ?? 'body'">
     <Transition
       enter-active-class="transition-opacity duration-150 ease-in-out"
       leave-active-class="transition-opacity duration-150 ease-in-out"
@@ -41,7 +41,7 @@
         <!-- Caption -->
         <div
           v-if="currentImage.alt"
-          class="absolute bottom-4 p-2 text-center rounded-sm text-white text-sm bg-black/65 z-10 transition-opacity duration-300 ease-in-out"
+          class="absolute bottom-4 p-2 text-center rounded-1 text-white text-sm bg-black/65 z-10 transition-opacity duration-300 ease-in-out"
           :class="{ 'opacity-0 pointer-events-none': !isControlsVisible }"
         >
           {{ currentImage.alt }}
@@ -72,6 +72,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, toRef, watch } from 'vue'
 import { useTouchHandler } from '#composables/useTouchHandler'
+import { usePortalTarget } from '#composables/usePortalTarget'
 import { useImageNavigation } from '#composables/useImageNavigation'
 import { useZoomPan } from '#composables/useZoomPan'
 import { useControlsAutoHide } from '#molecules/editor/composables/useControlsAutoHide'
@@ -87,6 +88,8 @@ const props = defineProps<{
   images: ViewableImage[]
   initialIndex: number
 }>()
+
+const portalTarget = usePortalTarget()
 
 const emit = defineEmits<{
   'update:show': [value: boolean]

@@ -1,4 +1,5 @@
 import type { Component } from 'vue'
+import type { PopoverAlign, PopoverSide } from '#components/Popover/types'
 import type { Editor } from './useEditor'
 import {
   commandMeta,
@@ -6,8 +7,17 @@ import {
   type EditorCommandContext,
   type EditorCommandMeta,
 } from './commands'
+import { CellSelection } from '@tiptap/pm/tables'
+import type { EditorState } from '@tiptap/pm/state'
+import type { EditorView } from '@tiptap/pm/view'
 import { openFontColorPicker } from './components/font-color/fontColorController'
 import { openTableCellColorPicker } from './components/table-color/tableCellColorController'
+import { openTableSizePicker } from './components/table-size-picker/tableSizePickerController'
+
+/** True when a multi-cell table range is selected (drag across cells). */
+function isCellRangeSelection(editor: Editor): boolean {
+  return editor.state?.selection instanceof CellSelection
+}
 
 export type MenuActionContext = EditorCommandContext
 
@@ -16,6 +26,11 @@ export type CommandMenuItem = {
   // house convention); a component renders as-is. Predefined items default it.
   icon?: Component | string
   label: string
+  /**
+   * State-dependent display label (e.g. "Merge cells" vs "Split cell").
+   * Renderers fall back to `label`, which stays the stable identity.
+   */
+  getLabel?: (editor: Editor) => string
   action: (
     editor: Editor,
     context?: MenuActionContext,
@@ -41,6 +56,58 @@ export type MenuGroupItem = {
 }
 
 export type MenuItem = CommandMenuItem | MenuGroupItem | { type: 'separator' }
+
+/** What `shouldShow` is given on every position update. */
+export type EditorMenuShouldShowContext = {
+  editor: Editor
+  /** The menu's own element. `EditorBubbleMenu` only. */
+  element?: HTMLElement
+  view: EditorView
+  state: EditorState
+  oldState?: EditorState
+  /** Start of the current selection. */
+  from: number
+  /** End of the current selection. */
+  to: number
+}
+
+/**
+ * Positioning options shared by `EditorBubbleMenu` and `EditorFloatingMenu`.
+ *
+ * A narrow owned type, not TipTap's Floating UI bag. The keys below are the
+ * whole supported contract, so a key that is not listed is a compile error.
+ *
+ * This is a break, not a tidy-up. The prop used to take TipTap's own bag, so
+ * `arrow`, `size`, `autoPlacement`, `onShow`, `onHide`, `onUpdate`,
+ * `onDestroy` and the middleware object forms of `offset`, `flip`, `shift`,
+ * `hide` and `inline` type-checked and reached Floating UI. They are removed
+ * from the v1 contract.
+ */
+export type EditorMenuOptions = {
+  /**
+   * Side of the selection to render the menu on. Same vocabulary as every
+   * other overlay in the library. Unset keeps TipTap's own default, `top` for
+   * the bubble menu and `right` for the floating menu.
+   */
+  side?: PopoverSide
+  /** Alignment along the chosen side. Default `center`. */
+  align?: PopoverAlign
+  strategy?: 'absolute' | 'fixed'
+  /** Gap in pixels between the menu and its anchor. `0` disables the gap. */
+  offset?: number
+  /** Flip to the opposite side when there is no room. Default on. */
+  flip?: boolean
+  /** Slide along the anchor to stay in view. Default on. */
+  shift?: boolean
+  /** Hide the menu when its anchor is scrolled out of view. */
+  hide?: boolean
+  /** Position against a wrapped inline selection rather than its bounding box. */
+  inline?: boolean
+  /** The scrollable element to follow. Defaults to the window. */
+  scrollTarget?: HTMLElement | Window
+  /** Decide whether the menu shows for the current selection. */
+  shouldShow?: (context: EditorMenuShouldShowContext) => boolean
+}
 
 function canRun(editor: Editor, command: CommandMenuItem['action']) {
   const canEditor = editor.can?.()
@@ -80,9 +147,14 @@ function command(
   }
 }
 
-export const Bold = command(commandMeta.bold, (editor) =>
-  editor.chain().focus().toggleBold().run(),
-)
+export const Bold = command(commandMeta.bold, (editor) => {
+  // A CellSelection must keep its cell range — `.focus()` collapses it to a
+  // text cursor, so fan bold out across cells without focusing.
+  if (isCellRangeSelection(editor)) {
+    return editor.chain().toggleCellBold().run()
+  }
+  return editor.chain().focus().toggleBold().run()
+})
 export const Italic = command(commandMeta.italic, (editor) =>
   editor.chain().focus().toggleItalic().run(),
 )
@@ -125,15 +197,19 @@ export const HeadingGroup: MenuGroupItem = {
   items: [H2, H3, H4],
 }
 
-export const AlignLeft = command(commandMeta.alignLeft, (editor) =>
-  editor.chain().focus().setTextAlign('left').run(),
-)
-export const AlignCenter = command(commandMeta.alignCenter, (editor) =>
-  editor.chain().focus().setTextAlign('center').run(),
-)
-export const AlignRight = command(commandMeta.alignRight, (editor) =>
-  editor.chain().focus().setTextAlign('right').run(),
-)
+function align(meta: EditorCommandMeta, alignment: string): CommandMenuItem {
+  return command(meta, (editor) => {
+    // Keep a multi-cell range intact: `.focus()` would collapse the
+    // CellSelection so alignment only hits the anchor cell.
+    if (isCellRangeSelection(editor)) {
+      return editor.chain().setCellTextAlign(alignment).run()
+    }
+    return editor.chain().focus().setTextAlign(alignment).run()
+  })
+}
+export const AlignLeft = align(commandMeta.alignLeft, 'left')
+export const AlignCenter = align(commandMeta.alignCenter, 'center')
+export const AlignRight = align(commandMeta.alignRight, 'right')
 // Named color/highlight (`namedColor`/`namedHighlight`) drive an imperative
 // picker so the toolbar button remains owned by MenuItems.
 export const FontColor = command(
@@ -160,6 +236,14 @@ export const InsertVideo = command(
   undefined,
   false,
 )
+// Like InsertVideo, exposed as a command but not added to any default toolbar;
+// the primary entry points for attachments are drag/drop and paste.
+export const InsertAttachment = command(
+  commandMeta.attachment,
+  (editor) => editor.chain().focus().selectAndUploadFile().run(),
+  undefined,
+  false,
+)
 export const InsertLink = command(
   commandMeta.link,
   (editor) => editor.commands.openLinkEditor(),
@@ -172,12 +256,24 @@ export const InsertIframe = command(
   undefined,
   false,
 )
-export const InsertTable = command(commandMeta.table, (editor) =>
-  editor
-    .chain()
-    .focus()
-    .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
-    .run(),
+// Opens a size-picker grid anchored to the toolbar button; without a trigger
+// (programmatic call) it inserts the default 3×3 directly. Like the other
+// picker-opening items, the action can't be probed via `can()`.
+export const InsertTable = command(
+  commandMeta.table,
+  (editor, context) => {
+    if (context?.trigger) {
+      openTableSizePicker({ editor, anchor: context.trigger })
+      return
+    }
+    return editor
+      .chain()
+      .focus()
+      .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
+      .run()
+  },
+  undefined,
+  false,
 )
 export const HorizontalRule = command(commandMeta.horizontalRule, (editor) =>
   editor.chain().focus().setHorizontalRule().run(),
@@ -270,12 +366,21 @@ export const TableToggleHeaderRow = tableCommand(
   (editor) => editor.isActive('tableHeader'),
 )
 // One button for both directions: merges a multi-cell selection, splits a
-// merged cell. `can()` disables it when neither applies.
-export const TableMergeOrSplit = tableCommand(
-  'Merge or split cells',
-  'lucide-table-cells-merge',
-  (editor) => editor.chain().focus().mergeOrSplit().run(),
-)
+// merged cell. `can()` disables it when neither applies; the label names
+// whichever direction currently applies.
+export const TableMergeOrSplit: CommandMenuItem = {
+  ...tableCommand(
+    'Merge or split cells',
+    'lucide-table-cells-merge',
+    (editor) => editor.chain().focus().mergeOrSplit().run(),
+  ),
+  getLabel: (editor) =>
+    editor.can().mergeCells()
+      ? 'Merge cells'
+      : editor.can().splitCell()
+        ? 'Split cell'
+        : 'Merge or split cells',
+}
 export const TableDelete = tableCommand(
   'Delete table',
   'lucide-trash-2',

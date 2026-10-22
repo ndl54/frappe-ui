@@ -3,6 +3,7 @@
   import PropsTable from '@/components/Docs/PropsTable.vue'
   import SlotsTable from '@/components/Docs/SlotsTable.vue'
   import EmitsTable from '@/components/Docs/EmitsTable.vue'
+  import ExposedTable from '@/components/Docs/ExposedTable.vue'
 
   const propsData = [
   {
@@ -21,20 +22,20 @@
     name: 'error',
     description: 'Error message shown below the input. Sets aria-invalid on the control.',
     required: false,
-    type: 'string | FrappeUIError'
+    type: 'ErrorMessageValue'
   },
   {
     name: 'type',
     description: 'Type of input to render. FormControl is a thin dispatcher — it forwards\n`label`/`description`/`error`/`required`/`size`/`variant` plus all\nremaining attrs/listeners to the resolved child component. Type-specific\nprops (e.g. `options` for select/combobox, `min`/`max`/`formatter` for\ndate pickers, `:options` for multiselect) and the `v-model` value shape\nfollow the underlying component — see that component\'s docs/types for\nthe full surface. Slots are forwarded by name; only slot names declared\non FormControl get IDE typing, others pass through at runtime.',
     required: false,
-    type: '"select" | TextInputTypes | "textarea" | "checkbox" | "autocomplete" | "combobox" | "multiselect" | "daterange" | "datetime"',
+    type: 'TextInputTypes | "textarea" | "select" | "checkbox" | "combobox" | "multiselect" | "daterange" | "datetime"',
     default: '"text"'
   },
   {
     name: 'size',
-    description: 'Size of the input',
+    description: 'Size of the input. The full input scale — `xs` 24px, `sm` 28px, `md` 32px,\n`lg` 40px. `type="checkbox"` renders on the narrower toggle scale, so `lg`\nis clamped to that scale\'s largest value there.',
     required: false,
-    type: '"md" | "sm"',
+    type: 'InputSize',
     default: '"sm"'
   },
   {
@@ -75,7 +76,7 @@
   },
   {
     name: 'item-prefix',
-    description: 'Custom slot for autocomplete items prefix (if using Autocomplete type)',
+    description: 'Per-item prefix content, forwarded to the combobox/multiselect rows',
     type: '{ item: any; }'
   },
   {
@@ -84,10 +85,20 @@
     type: 'any'
   }
 ]
+
+  const exposedData = [
+  {
+    name: 'focus',
+    description: 'Moves focus to the control that `type` renders.',
+    type: '(options?: FocusOptions) => void'
+  }
+]
 </script>
+
 ## API Reference
 
-<PropsTable name="FormControl" :data="propsData"/> 
+<PropsTable name="FormControl" :data="propsData"/>
 
-<SlotsTable :data="slotsData"/> 
+<SlotsTable :data="slotsData"/>
 
+<ExposedTable :data="exposedData"/>

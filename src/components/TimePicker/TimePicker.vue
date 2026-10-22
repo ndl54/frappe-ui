@@ -1,17 +1,27 @@
 <template>
   <PopoverRoot v-model:open="isOpen">
     <PopoverAnchor :reference="anchorEl" as-child>
-      <div>
+      <div v-bind="$attrs">
         <TextInput
           ref="inputRef"
           v-model="displayValue"
           type="text"
           class="w-full cursor-text text-sm"
+          :id="id"
+          :label="label"
+          :description="description"
+          :error="error"
+          :required="required"
           :variant="variant"
+          :size="size"
           :placeholder="placeholder"
           :disabled="disabled"
           :readonly="isReadonly"
-          @pointerdown="recordPointerDown"
+          role="combobox"
+          aria-haspopup="listbox"
+          :aria-expanded="isOpen"
+          :aria-controls="isOpen ? panelId : undefined"
+          :aria-activedescendant="isOpen ? activeDescendantId : undefined"
           @focus="onFocus"
           @click="onClickInput"
           @blur="onBlur"
@@ -20,18 +30,25 @@
           @keydown.up.prevent="onArrowUp"
           @keydown.esc="onEscape"
         >
+          <template v-if="$slots.label" #label="slotProps">
+            <slot name="label" v-bind="slotProps" />
+          </template>
+          <template v-if="$slots.description" #description>
+            <slot name="description" />
+          </template>
           <template v-if="$slots.prefix" #prefix>
             <slot name="prefix" />
           </template>
           <template #suffix>
             <slot
               name="suffix"
-              v-bind="{ togglePopover, isOpen }"
+              v-bind="{ open: isOpen, disabled, setOpen, close }"
             >
               <span
+                data-slot="chevron"
                 class="lucide-chevron-down size-4 cursor-pointer"
                 aria-hidden="true"
-                @mousedown.prevent="togglePopover"
+                @mousedown.prevent="setOpen(!isOpen)"
               />
             </slot>
           </template>
@@ -39,7 +56,7 @@
       </div>
     </PopoverAnchor>
 
-    <PopoverPortal>
+    <PopoverPortal :to="portalTarget">
       <PopoverContent
         data-slot="content"
         data-selection
@@ -52,12 +69,11 @@
       >
         <div
           ref="panelRef"
+          :id="panelId"
           data-slot="content-body"
-          :data-motion="motion"
-          class="time-picker-panel max-h-48 w-44 overflow-y-auto rounded-lg bg-surface-modal p-1 text-base shadow-2xl ring-1 ring-black ring-opacity-5 focus:outline-none"
-          style="transform-origin: var(--reka-popover-content-transform-origin)"
+          data-motion="instant"
+          class="time-picker-panel max-h-48 w-44 overflow-y-auto rounded-6 bg-surface-elevation-2 p-1 text-base shadow-2xl ring-1 ring-black ring-opacity-5 focus:outline-none"
           role="listbox"
-          :aria-activedescendant="activeDescendantId"
         >
           <button
             v-for="(opt, idx) in displayedOptions"
@@ -66,7 +82,7 @@
             :id="optionId(idx)"
             type="button"
             role="option"
-            class="group flex h-7 w-full items-center rounded px-2 text-left tabular-nums"
+            class="group flex h-7 w-full items-center rounded-4 px-2 text-left leading-tighter tabular-nums"
             :class="rowClass(opt, idx)"
             :aria-selected="canonicalValue === opt.value || undefined"
             @click="selectOption(opt.value)"
@@ -81,7 +97,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, watch, watchEffect } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import {
   PopoverAnchor,
   PopoverContent,
@@ -89,7 +105,7 @@ import {
   PopoverRoot,
 } from 'reka-ui'
 import { TextInput } from '../TextInput'
-import { usePopoverMotion } from '../../composables/usePopoverMotion'
+import { usePortalTarget } from '../../composables/usePortalTarget'
 import '../shared/selection/popoverMotion.css'
 import {
   findNearestIndex,
@@ -108,6 +124,7 @@ import type {
   TimePickerProps,
   Variant,
 } from './types'
+import type { PickerExposed } from '../shared/picker/types'
 
 const props = withDefaults(defineProps<TimePickerProps>(), {
   modelValue: '',
@@ -115,122 +132,53 @@ const props = withDefaults(defineProps<TimePickerProps>(), {
   options: () => [],
   placeholder: 'Select time',
   variant: 'subtle' as Variant,
-  use12Hour: true,
   disabled: false,
   typeable: true,
-  readonly: false,
   openOnFocus: false,
   openOnClick: true,
-  // Legacy defaults: `autoClose: true` and `allowCustom: true` so an omitted
-  // prop (which Vue's Boolean coercion would otherwise read as `false`) stays
-  // distinguishable from an explicit `false` — the only signal that maps to
-  // `keepOpen` / `readonly`.
-  autoClose: true,
-  allowCustom: true,
 })
 
 const emit = defineEmits<TimePickerEmits>()
 
+const portalTarget = usePortalTarget()
+
 defineSlots<{
+  /** Overrides the rendered label content. Receives `{ required }`. */
+  label?: (props: { required: boolean }) => any
+  /** Overrides the rendered description content. */
+  description?: () => any
   /** Rendered inside the trigger input, before the typed value. */
   prefix?: () => any
   /**
    * Rendered inside the trigger input, after the typed value. Defaults to a
    * chevron-down that toggles the popover.
    */
-  suffix?: (props: { togglePopover: () => void; isOpen: boolean }) => any
+  suffix?: (props: {
+    open: boolean
+    disabled: boolean
+    setOpen: (value: boolean) => void
+    close: () => void
+  }) => any
 }>()
 
-// ── Prop reconciliation (new wins; legacy aliases preserved with warnings) ──
+defineOptions({ inheritAttrs: false })
 
-const resolvedSide = computed<PopoverSide>(
-  () =>
-    props.side ?? ((props.placement?.split('-')[0] as PopoverSide) ?? 'bottom'),
-)
-const resolvedAlign = computed<PopoverAlign>(() => {
-  if (props.align !== undefined) return props.align
-  return (props.placement?.split('-')[1] as PopoverAlign) ?? 'start'
-})
+// ── Prop reconciliation ──────────────────────────────────────────────────────
+
+const resolvedSide = computed<PopoverSide>(() => props.side ?? 'bottom')
+const resolvedAlign = computed<PopoverAlign>(() => props.align ?? 'start')
 const resolvedOffset = computed(() => props.offset ?? 4)
 
-const shouldKeepOpen = computed(
-  () => props.keepOpen === true || props.autoClose === false,
-)
+const shouldKeepOpen = computed(() => props.keepOpen === true)
 
-const isReadonly = computed(
-  () =>
-    props.typeable === false ||
-    props.readonly === true ||
-    props.allowCustom === false,
-)
+const resolvedFormat = computed(() => props.format ?? 'HH:mm')
 
-if (import.meta.env.DEV) {
-  const warned = {
-    value: false,
-    placement: false,
-    autoClose: false,
-    allowCustom: false,
-    readonly: false,
-    scrollMode: false,
-    minTime: false,
-    maxTime: false,
-  }
-  watchEffect(() => {
-    if (props.value && !warned.value) {
-      console.warn(
-        '[TimePicker] `value` is deprecated. Use `v-model` / `modelValue` instead.',
-      )
-      warned.value = true
-    }
-    if (props.placement !== undefined && !warned.placement) {
-      console.warn(
-        '[TimePicker] `placement` is deprecated. Use `side` and `align` instead.',
-      )
-      warned.placement = true
-    }
-    if (props.autoClose === false && !warned.autoClose) {
-      console.warn(
-        '[TimePicker] `autoClose: false` is deprecated. Use `keepOpen: true` instead.',
-      )
-      warned.autoClose = true
-    }
-    if (props.allowCustom === false && !warned.allowCustom) {
-      console.warn(
-        '[TimePicker] `allowCustom: false` is deprecated. Use `typeable: false` instead.',
-      )
-      warned.allowCustom = true
-    }
-    if (props.readonly === true && !warned.readonly) {
-      console.warn(
-        '[TimePicker] picker-level `readonly: true` is deprecated. Use `typeable: false` instead.',
-      )
-      warned.readonly = true
-    }
-    if (props.scrollMode !== undefined && !warned.scrollMode) {
-      console.warn(
-        '[TimePicker] `scrollMode` is deprecated. Scrolling is always centered now.',
-      )
-      warned.scrollMode = true
-    }
-    if (props.minTime !== undefined && !warned.minTime) {
-      console.warn(
-        '[TimePicker] `minTime` is deprecated. Use `min` instead.',
-      )
-      warned.minTime = true
-    }
-    if (props.maxTime !== undefined && !warned.maxTime) {
-      console.warn(
-        '[TimePicker] `maxTime` is deprecated. Use `max` instead.',
-      )
-      warned.maxTime = true
-    }
-  })
-}
+const isReadonly = computed(() => props.typeable === false)
 
 // ── State ──
 
-const inputRef = ref<{ el: HTMLElement | null } | null>(null)
-const anchorEl = computed(() => inputRef.value?.el ?? undefined)
+const inputRef = ref<InstanceType<typeof TextInput> | null>(null)
+const anchorEl = computed(() => inputRef.value?.inputElement ?? undefined)
 const panelRef = ref<HTMLElement | null>(null)
 
 // Reka treats anything outside `PopoverContent` as "outside" — including our
@@ -240,28 +188,32 @@ const panelRef = ref<HTMLElement | null>(null)
 // any suffix like the chevron); those elements have their own click logic.
 function onInteractOutside(event: Event) {
   const target = event.target as Node | null
-  const triggerRow = inputRef.value?.el?.parentElement
+  const triggerRow = inputRef.value?.inputElement?.parentElement
   if (target && triggerRow?.contains(target)) {
     event.preventDefault()
   }
 }
 const uid = Math.random().toString(36).slice(2, 9)
 
-const isOpen = ref(false)
-const { motion, onPointerDown: recordPointerDown } = usePopoverMotion(isOpen)
+// Seeded from the prop, so a parent that mounts the picker with `open` already
+// true gets an open panel. The watch below only sees later changes.
+const isOpen = ref(props.open === true)
 
 // Canonical 24-hour value (`HH:mm` or `HH:mm:ss`) — the source of truth.
 const canonicalValue = ref<string>(
-  normalize24(props.modelValue || props.value || ''),
+  normalize24(props.modelValue || '', resolvedFormat.value),
 )
 
 // What the user sees / can edit in the trigger input. Synced from
 // canonicalValue when not actively typing.
-const displayValue = ref<string>(formatTime(canonicalValue.value, props.use12Hour))
+const displayValue = ref<string>(
+  formatTime(canonicalValue.value, resolvedFormat.value),
+)
 
 const isTyping = ref(false)
 const highlightIndex = ref<number>(-1)
-let invalid = false
+
+const panelId = `tp-${uid}-listbox`
 
 function optionId(idx: number): string {
   return `tp-${uid}-${idx}`
@@ -273,23 +225,22 @@ const activeDescendantId = computed<string | undefined>(() =>
 
 // ── Options ──
 
-const minMinutes = computed(() =>
-  minutesFromHHMM(props.min ?? props.minTime ?? ''),
-)
-const maxMinutes = computed(() =>
-  minutesFromHHMM(props.max ?? props.maxTime ?? ''),
-)
+const minMinutes = computed(() => minutesFromHHMM(props.min ?? ''))
+const maxMinutes = computed(() => minutesFromHHMM(props.max ?? ''))
 
 const displayedOptions = computed<TimeOption[]>(() => {
   if (props.options?.length) {
     return props.options.map((o) => {
       const value = normalize24(o.value) || o.value
-      return { value, label: o.label || formatTime(value, props.use12Hour) }
+      return {
+        value,
+        label: o.label || formatTime(value, resolvedFormat.value),
+      }
     })
   }
   return generateTimeOptions({
     interval: props.interval,
-    use12Hour: props.use12Hour,
+    format: resolvedFormat.value,
     minMinutes: minMinutes.value,
     maxMinutes: maxMinutes.value,
   })
@@ -300,10 +251,13 @@ const displayedOptions = computed<TimeOption[]>(() => {
  * typed text, or the option nearest to it in minutes. Drives both the
  * highlighted row and the scroll-into-view target.
  */
-const typingTarget = computed<{ exact: TimeOption | null; nearest: TimeOption | null }>(() => {
+const typingTarget = computed<{
+  exact: TimeOption | null
+  nearest: TimeOption | null
+}>(() => {
   const list = displayedOptions.value
   if (!list.length) return { exact: null, nearest: null }
-  const parsed = parseFlexibleTime(displayValue.value)
+  const parsed = parseFlexibleTime(displayValue.value, resolvedFormat.value)
   if (!parsed.valid) return { exact: null, nearest: null }
   const candidate = parsed.ss
     ? `${parsed.hh24}:${parsed.mm}:${parsed.ss}`
@@ -337,21 +291,25 @@ function baseCompare(val: string): string {
 // ── Model sync ──
 
 watch(
-  () => [props.modelValue, props.value] as const,
-  ([m, v]) => {
-    const nv = normalize24(m || v || '')
+  () => props.modelValue,
+  (m) => {
+    const nv = normalize24(m || '', resolvedFormat.value)
     if (nv === canonicalValue.value) return
     canonicalValue.value = nv
-    if (!isTyping.value) displayValue.value = formatTime(nv, props.use12Hour)
+    if (!isTyping.value)
+      displayValue.value = formatTime(nv, resolvedFormat.value)
   },
 )
 
-// Reformat the displayed value when the format changes (e.g. use12Hour toggle).
+// Reformat the displayed value when the display format changes.
 watch(
-  () => props.use12Hour,
+  () => resolvedFormat.value,
   () => {
     if (!isTyping.value) {
-      displayValue.value = formatTime(canonicalValue.value, props.use12Hour)
+      displayValue.value = formatTime(
+        canonicalValue.value,
+        resolvedFormat.value,
+      )
     }
   },
 )
@@ -363,27 +321,20 @@ watch(displayValue, () => {
   // The model→display sync above (re)writes displayValue while not typing —
   // distinguish user keystrokes from that programmatic write by only
   // toggling when the value diverges from the formatted canonical.
-  const formatted = formatTime(canonicalValue.value, props.use12Hour)
+  const formatted = formatTime(canonicalValue.value, resolvedFormat.value)
   if (displayValue.value !== formatted) {
     isTyping.value = true
     highlightIndex.value = -1
   }
 })
 
-function setInvalid(next: boolean) {
-  if (invalid === next) return
-  invalid = next
-  emit('invalid-change', next)
-}
-
 function commit(value: string) {
   const prev = canonicalValue.value
   canonicalValue.value = value
-  displayValue.value = formatTime(value, props.use12Hour)
+  displayValue.value = formatTime(value, resolvedFormat.value)
   isTyping.value = false
   emit('update:modelValue', value)
   if (value !== prev) emit('change', value)
-  setInvalid(false)
 }
 
 function commitTyped(raw: string) {
@@ -391,15 +342,24 @@ function commitTyped(raw: string) {
     commit('')
     return
   }
-  const parsed = parseFlexibleTime(raw)
+  const formattedCurrent = formatTime(
+    canonicalValue.value,
+    resolvedFormat.value,
+  )
+  if (raw === formattedCurrent) {
+    displayValue.value = formattedCurrent
+    isTyping.value = false
+    return
+  }
+  const parsed = parseFlexibleTime(raw, resolvedFormat.value)
   if (
     !parsed.valid ||
     isOutOfRange(parsed.total, minMinutes.value, maxMinutes.value)
   ) {
-    emit('input-invalid', raw)
-    setInvalid(true)
-    // Revert visible text to the last good value.
-    displayValue.value = formatTime(canonicalValue.value, props.use12Hour)
+    // Rejected text reverts to the last valid value, which is the whole
+    // report: `input-invalid` and `invalid-change` said the same thing to
+    // nobody, and the flag never reset (INP-Q3).
+    displayValue.value = formatTime(canonicalValue.value, resolvedFormat.value)
     isTyping.value = false
     return
   }
@@ -436,8 +396,13 @@ function selectOption(value: string) {
 
 // ── Popover + keyboard wiring ──
 
-function togglePopover() {
-  isOpen.value = !isOpen.value
+function setOpen(value: boolean) {
+  if (props.disabled && value) return
+  isOpen.value = value
+}
+
+function close() {
+  setOpen(false)
 }
 
 function onClickInput() {
@@ -496,7 +461,8 @@ function moveHighlight(delta: number) {
     const idx = seed ? list.findIndex((o) => o.value === seed) : -1
     highlightIndex.value = idx > -1 ? idx : 0
   } else {
-    highlightIndex.value = (highlightIndex.value + delta + list.length) % list.length
+    highlightIndex.value =
+      (highlightIndex.value + delta + list.length) % list.length
   }
   isTyping.value = false
   scrollHighlightedIntoView()
@@ -515,7 +481,7 @@ function onEscape(e: KeyboardEvent) {
 
 function selectAll() {
   nextTick(() => {
-    const root = inputRef.value?.el
+    const root = inputRef.value?.inputElement
     if (!root) return
     const input = root.querySelector?.('input') as HTMLInputElement | null
     input?.select?.()
@@ -524,7 +490,7 @@ function selectAll() {
 
 function blurInput() {
   nextTick(() => {
-    const root = inputRef.value?.el
+    const root = inputRef.value?.inputElement
     if (!root) return
     const input = root.querySelector?.('input') as HTMLInputElement | null
     input?.blur?.()
@@ -551,25 +517,33 @@ function scrollOnOpen() {
     const target =
       typingTarget.value.exact?.value ??
       typingTarget.value.nearest?.value ??
-      (canonicalValue.value
-        ? baseCompare(canonicalValue.value)
-        : null)
+      (canonicalValue.value ? baseCompare(canonicalValue.value) : null)
     if (!target) return
     const el = panel.querySelector<HTMLElement>(`[data-value="${target}"]`)
     el?.scrollIntoView({ block: 'center' })
   })
 }
 
+function onOpened() {
+  highlightIndex.value = -1
+  scrollOnOpen()
+}
+
 watch(isOpen, (open) => {
   emit('update:open', open)
   if (open) {
-    emit('open')
-    highlightIndex.value = -1
-    scrollOnOpen()
+    onOpened()
   } else {
-    emit('close')
     isTyping.value = false
   }
+})
+
+// A picker mounted with `open` already true never crosses the watch above, so
+// the open-time work — the highlight seed and the scroll to the current value —
+// runs here instead. No `update:open`: the parent is the one that asked for an
+// open panel.
+onMounted(() => {
+  if (isOpen.value) onOpened()
 })
 
 watch(
@@ -581,12 +555,16 @@ watch(
   },
 )
 
-defineExpose({
-  /** Focus the trigger input. Used by DateTimePicker to flow keyboard focus
-   *  from the calendar grid into the time picker after a date is picked. */
-  focus: () => {
-    inputRef.value?.el?.focus?.()
+// ADR-0012: TimePicker owns its trigger, so `open` and `close` earn a place on
+// the ref. `focus` is the method every input guarantees (INP-Q5); DateTimePicker
+// already uses it to flow keyboard focus from the calendar grid into the time
+// picker after a date is picked.
+defineExpose<PickerExposed>({
+  open: () => setOpen(true),
+  close,
+  /** Moves focus to the input. */
+  focus: (options?: FocusOptions) => {
+    inputRef.value?.focus(options)
   },
 })
 </script>
-

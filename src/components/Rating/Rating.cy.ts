@@ -1,12 +1,7 @@
 import { defineComponent, h } from 'vue'
 import Rating from './Rating.vue'
-import { _resetWarnDeprecated } from '../../utils/warnDeprecated'
 
 describe('Rating', () => {
-  beforeEach(() => {
-    _resetWarnDeprecated()
-  })
-
   it('Renders', () => {
     cy.mount(Rating, { props: { modelValue: 2, label: 'abc' } })
 
@@ -41,21 +36,12 @@ describe('Rating', () => {
     cy.get('@onUpdate').should('not.have.been.called')
   })
 
-  it('readonly (deprecated alias for disabled)', () => {
-    cy.mount(Rating, {
-      props: { 'onUpdate:modelValue': cy.spy().as('onUpdate'), readonly: true },
-    })
-
-    cy.get('[role="radio"]').eq(1).click()
-    cy.get('@onUpdate').should('not.have.been.called')
-  })
-
   it('sizes', () => {
     const sizes = {
+      xs: 'size-3.5',
       sm: 'size-4',
       md: 'size-5',
       lg: 'size-6',
-      xl: 'size-7',
     } as const
 
     for (const size in sizes) {
@@ -71,18 +57,6 @@ describe('Rating', () => {
   it('max controls star count', () => {
     cy.mount(Rating, { props: { modelValue: 2, max: 10 } })
     cy.get('[role="radio"]').should('have.length', 10)
-  })
-
-  it('rating_from alias still works and warns', () => {
-    cy.window().then((win) => {
-      cy.spy(win.console, 'warn').as('consoleWarn')
-    })
-    cy.mount(Rating, { props: { modelValue: 2, rating_from: 10 } })
-    cy.get('[role="radio"]').should('have.length', 10)
-    cy.get('@consoleWarn').should(
-      'have.been.calledWithMatch',
-      /Rating\.rating_from is deprecated/,
-    )
   })
 
   describe('step=0.5 (slider mode)', () => {
@@ -290,6 +264,32 @@ describe('Rating', () => {
       })
     })
 
+    it('names and describes from the slots alone', () => {
+      // The slots render the same elements the props do, so the references
+      // have to follow what renders rather than what the props say.
+      cy.mount(Rating, {
+        slots: {
+          label: () => h('span', 'Quality'),
+          description: () => h('span', 'Pick a rating.'),
+        },
+      })
+      cy.get('[role="radiogroup"]').then(($el) => {
+        cy.get(`#${$el.attr('aria-labelledby')}`).should('contain.text', 'Quality')
+        cy.get(`#${$el.attr('aria-describedby')}`).should('contain.text', 'Pick a rating.')
+      })
+    })
+
+    it('drops aria-required in slider mode, keeps it for the radiogroup', () => {
+      // The ARIA role table lists aria-required for radiogroup but not for
+      // slider, so a half-step Rating fails aria-allowed-attr if it sets one.
+      cy.mount(Rating, { props: { label: 'Quality', required: true } })
+      cy.get('[role="radiogroup"]').should('have.attr', 'aria-required', 'true')
+
+      cy.mount(Rating, { props: { label: 'Quality', required: true, step: 0.5 } })
+      cy.get('[role="slider"]').should('not.have.attr', 'aria-required')
+      cy.get('[role="slider"]').should('have.attr', 'data-required', 'true')
+    })
+
     it('renders error state and suppresses description', () => {
       cy.mount(Rating, {
         props: {
@@ -315,6 +315,59 @@ describe('Rating', () => {
     it('exposes data-disabled when disabled', () => {
       cy.mount(Rating, { props: { label: 'Quality', disabled: true } })
       cy.get('[role="radiogroup"]').should('have.attr', 'data-disabled', 'true')
+    })
+  })
+
+  // INP-Q15 / INP-Q16 / INP-Q6.
+  describe('default size, template ref and attribute routing', () => {
+    it('defaults to sm', () => {
+      cy.mount(Rating, { props: { modelValue: 2 } })
+      cy.get('[data-slot="control"]').should('have.attr', 'data-size', 'sm')
+      cy.get('[data-slot="star"]').eq(0).should('have.class', 'size-4')
+    })
+
+    it('renders an invalid size at sm too', () => {
+      cy.mount(Rating, { props: { modelValue: 2, size: 'xl' as never } })
+      cy.get('[data-slot="star"]').eq(0).should('have.class', 'size-4')
+    })
+
+    it('focus() goes to the selected star', () => {
+      cy.mount(Rating, { props: { modelValue: 3 } }).then((mounted: any) => {
+        const vm = mounted.component ?? mounted.wrapper?.vm ?? mounted
+        vm?.focus?.()
+      })
+
+      cy.focused().should('have.attr', 'data-index', '3')
+    })
+
+    it('focus() goes to the first star when the value is empty', () => {
+      cy.mount(Rating, { props: { modelValue: 0 } }).then((mounted: any) => {
+        const vm = mounted.component ?? mounted.wrapper?.vm ?? mounted
+        vm?.focus?.()
+      })
+
+      cy.focused().should('have.attr', 'data-index', '1')
+    })
+
+    it('focus() goes to the root in half-star (slider) mode', () => {
+      cy.mount(Rating, { props: { modelValue: 2.5, step: 0.5 } }).then(
+        (mounted: any) => {
+          const vm = mounted.component ?? mounted.wrapper?.vm ?? mounted
+          vm?.focus?.()
+        },
+      )
+
+      cy.focused().should('have.attr', 'data-slot', 'control')
+    })
+
+    it('puts aria-label and data-* on the control, and only once', () => {
+      cy.mount(Rating, {
+        props: { modelValue: 2 },
+        attrs: { 'data-test': 'score' },
+      })
+
+      cy.get('[data-slot="control"]').should('have.attr', 'data-test', 'score')
+      cy.get('[data-test="score"]').should('have.length', 1)
     })
   })
 })

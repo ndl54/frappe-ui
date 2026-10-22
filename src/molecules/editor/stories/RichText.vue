@@ -28,20 +28,24 @@ import {
 } from 'frappe-ui/editor'
 
 const people = [
-  { id: 'sarah', label: 'Sarah Chen' },
-  { id: 'faris', label: 'Faris Ansari' },
-  { id: 'maria', label: 'Maria Garcia' },
+  { value: 'sarah', label: 'Sarah Chen' },
+  { value: 'faris', label: 'Faris Ansari' },
+  { value: 'maria', label: 'Maria Garcia' },
 ]
 
 const tags = [
-  { id: 'onboarding', label: 'onboarding' },
-  { id: 'billing', label: 'billing' },
+  { value: 'onboarding', label: 'onboarding' },
+  { value: 'billing', label: 'billing' },
 ]
 
 const extensions = [
   RichTextKit.configure({
     mention: { items: people },
     tag: { items: tags },
+    // Opt-in members: this story shows a table of contents and the format
+    // painter, so both are asked for explicitly.
+    toc: {},
+    styleClipboard: {},
   }),
 ]
 
@@ -114,7 +118,7 @@ const uploadFunction = async (file) => ({
         <!-- Inside <Editor>, the building blocks read the editor from
              context — no :editor prop needed. -->
         <div
-          class="overflow-hidden rounded-lg border border-outline-gray-2 bg-surface-white"
+          class="overflow-hidden rounded-6 border border-outline-gray-2 bg-surface-base"
         >
           <EditorBubbleMenu :items="bubbleToolbar" />
           <EditorFloatingMenu :items="toolbar" />

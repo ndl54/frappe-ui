@@ -16,10 +16,14 @@ import { openImageGroupUploadDialog } from '#molecules/editor/extensions/image-g
  *   - several images     -> open the image group dialog (matches the toolbar's
  *                           multi-image pick, instead of stacking them inline)
  *   - any video(s)       -> upload inline (`uploadVideoFiles`)
- *   - anything else      -> reserved for attachments (not yet supported)
+ *   - anything else      -> upload inline as attachments (`uploadAttachmentFiles`)
  *
  * Type routing is feature-detected via the editor's commands, so a kit without
- * the image or video extension simply skips that branch.
+ * the image, video, or attachment extension simply skips that branch.
+ *
+ * Drop is handled under `handleDOMEvents.drop`; a file paste of non-image,
+ * non-video files is handled under `props.handlePaste` (image/video pastes keep
+ * flowing to their own extensions' paste handlers).
  */
 
 const IMAGE_RE = /^image\//i
@@ -61,11 +65,18 @@ export const MediaDrop = Extension.create({
         (files: File[]) =>
         ({ editor }) => {
           if (files.length === 0) return false
+          // A read-only editor takes no files, whichever entry point asked.
+          // Guarding the command as well as its callers keeps the rule in one
+          // place: the drop plugin, `EditorDropZone`, and anything else that
+          // reaches for `dropFiles` all get it.
+          if (!editor.isEditable) return false
 
           const images = files.filter((f) => IMAGE_RE.test(f.type))
           const videos = files.filter((f) => VIDEO_RE.test(f.type))
-          // Files that are neither image nor video are left for attachment
-          // support (not yet implemented).
+          // Everything that is neither image nor video becomes an attachment.
+          const others = files.filter(
+            (f) => !IMAGE_RE.test(f.type) && !VIDEO_RE.test(f.type),
+          )
 
           const can = (name: string): boolean =>
             typeof (editor.commands as Record<string, unknown>)[name] ===
@@ -86,12 +97,23 @@ export const MediaDrop = Extension.create({
             handled = true
           }
 
+          if (others.length > 0 && can('uploadAttachmentFiles')) {
+            editor.commands.uploadAttachmentFiles(others)
+            handled = true
+          }
+
           return handled
         },
     }
   },
 
   addProseMirrorPlugins() {
+    const editor = this.editor
+
+    /** Whether a kit exposes a given routing command. */
+    const can = (name: string): boolean =>
+      typeof (editor.commands as Record<string, unknown>)[name] === 'function'
+
     return [
       new Plugin({
         props: {
@@ -99,12 +121,33 @@ export const MediaDrop = Extension.create({
             drop: (view: EditorView, event: DragEvent): boolean => {
               const files = collectFiles(event.dataTransfer)
               if (files.length === 0) return false
+
+              // ProseMirror runs `handleDOMEvents` before its own editable
+              // check (`runCustomHandler` in input.ts), so this fires on a
+              // read-only editor too. Without this guard, dropping an image on
+              // a post you are only reading uploads it and inserts it locally.
+              //
+              // Claimed rather than ignored: letting the event through means
+              // the browser navigates the tab to the dropped file, which is a
+              // worse outcome than a drop that does nothing. Propagation is
+              // left alone, so the event still bubbles. Inside
+              // `EditorDropZone` it goes no further: that handler stops
+              // propagation itself, and it also bails on a read-only editor.
+              if (!view.editable) {
+                event.preventDefault()
+                return true
+              }
               // Only claim drops we can actually route; let ProseMirror handle
-              // the rest (and, later, attachments).
-              const isMedia = files.some(
+              // the rest. Non-media files route to attachments when available.
+              const hasMedia = files.some(
                 (f) => IMAGE_RE.test(f.type) || VIDEO_RE.test(f.type),
               )
-              if (!isMedia) return false
+              const hasOther = files.some(
+                (f) => !IMAGE_RE.test(f.type) && !VIDEO_RE.test(f.type),
+              )
+              const routable =
+                hasMedia || (hasOther && can('uploadAttachmentFiles'))
+              if (!routable) return false
 
               event.preventDefault()
               event.stopPropagation()
@@ -123,9 +166,28 @@ export const MediaDrop = Extension.create({
                 )
               }
 
-              this.editor.commands.dropFiles(files)
+              editor.commands.dropFiles(files)
               return true
             },
+          },
+
+          // Paste of non-image, non-video files (image/video pastes keep
+          // flowing to their own extensions' paste handlers, so we never claim
+          // them here). Pure-attachment pastes are uploaded at the cursor.
+          handlePaste: (_view, event): boolean => {
+            if (!can('uploadAttachmentFiles')) return false
+            const files = collectFiles(event.clipboardData)
+            if (files.length === 0) return false
+            const others = files.filter(
+              (f) => !IMAGE_RE.test(f.type) && !VIDEO_RE.test(f.type),
+            )
+            // Only claim when the paste is exclusively attachments; otherwise
+            // defer to the image/video paste handlers.
+            if (others.length !== files.length) return false
+
+            event.preventDefault()
+            editor.commands.uploadAttachmentFiles(others)
+            return true
           },
         },
       }),

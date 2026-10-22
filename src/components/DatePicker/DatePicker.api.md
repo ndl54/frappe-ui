@@ -3,23 +3,9 @@
   import PropsTable from '@/components/Docs/PropsTable.vue'
   import SlotsTable from '@/components/Docs/SlotsTable.vue'
   import EmitsTable from '@/components/Docs/EmitsTable.vue'
+  import ExposedTable from '@/components/Docs/ExposedTable.vue'
 
   const datePickerProps = [
-  {
-    name: 'value',
-    description: 'Uncontrolled initial value for the picker.',
-    required: false,
-    type: 'string',
-    default: '""',
-    deprecated: 'Use `modelValue` with `v-model` instead.'
-  },
-  {
-    name: 'modelValue',
-    description: 'Controlled value for the picker.',
-    required: false,
-    type: 'string',
-    default: '""'
-  },
   {
     name: 'side',
     description: 'Preferred popover side relative to the trigger.',
@@ -37,13 +23,6 @@
     description: 'Gap between the trigger and popover content in pixels.',
     required: false,
     type: 'number'
-  },
-  {
-    name: 'placement',
-    description: 'Preferred popover placement relative to the trigger.',
-    required: false,
-    type: 'DatePickerPlacement',
-    deprecated: 'Use `side` and `align` instead.'
   },
   {
     name: 'format',
@@ -99,14 +78,6 @@
     default: 'true'
   },
   {
-    name: 'readonly',
-    description: 'Prevents manual typing while keeping the picker interactive.',
-    required: false,
-    type: 'boolean',
-    default: 'false',
-    deprecated: 'Use `typeable: false` instead.'
-  },
-  {
     name: 'disabled',
     description: 'Disables the trigger input and calendar interactions.',
     required: false,
@@ -127,14 +98,6 @@
     type: 'boolean'
   },
   {
-    name: 'autoClose',
-    description: 'Closes the popover after a value is picked.',
-    required: false,
-    type: 'boolean',
-    default: 'true',
-    deprecated: 'Use `keepOpen` instead (inverse semantics: `autoClose: false` → `keepOpen: true`).'
-  },
-  {
     name: 'min',
     description: 'Earliest selectable date. Accepts `YYYY-MM-DD` (or, for `DateTimePicker`,\n`YYYY-MM-DD HH:mm:ss` for second-level granularity).',
     required: false,
@@ -153,19 +116,11 @@
     type: '((date: Dayjs) => boolean)'
   },
   {
-    name: 'allowCustom',
-    description: 'Allows users to type custom date text into the input.',
+    name: 'modelValue',
+    description: 'Controlled value for the picker.',
     required: false,
-    type: 'boolean',
-    default: 'true',
-    deprecated: 'Use `typeable: false` instead.'
-  },
-  {
-    name: 'inputClass',
-    description: 'Additional classes applied to the trigger input.',
-    required: false,
-    type: 'string | string[] | Record<string, boolean>',
-    deprecated: 'Apply `class` directly to the DatePicker component element to control width.'
+    type: 'string',
+    default: '""'
   },
   {
     name: 'label',
@@ -175,19 +130,19 @@
   },
   {
     name: 'description',
-    description: 'Helper text rendered below the input.\nHidden when `error` is set.',
+    description: 'Helper text rendered below the input.\nHidden when `error` is set. A `#description` slot is not: it renders\nbeside the error, and is referenced alongside it.',
     required: false,
     type: 'string'
   },
   {
     name: 'error',
-    description: 'Error message rendered below the input. When set, the control receives\n`aria-invalid="true"` and `data-state="invalid"`. May be either a string\nor an `Error` object whose `messages?: string[]` is rendered as stacked\nlines (with `Error.message` as the fallback).',
+    description: 'Error message rendered below the input. When set, the control receives\n`aria-invalid="true"` and `data-state="invalid"`. Takes a string, an\narray of strings, or an `Error` whose `messages` are rendered as stacked\nlines (with `Error.message` as the fallback). This is the same value\n`ErrorMessage.message` takes. An empty array and an empty string both\nmean no error.',
     required: false,
-    type: 'string | FrappeUIError'
+    type: 'ErrorMessageValue'
   },
   {
     name: 'required',
-    description: 'Marks the field as required. Renders an asterisk next to the label and\nforwards `required` / `aria-required` to the underlying control.',
+    description: 'Marks the field as required. Renders an asterisk next to the label, with\n`sr-only` text that announces it, and forwards `required` /\n`aria-required` to the underlying control where the control\'s role allows\nit. `data-required` is set either way.',
     required: false,
     type: 'boolean'
   },
@@ -204,12 +159,6 @@
     name: 'trigger',
     description: 'Custom trigger renderer for the picker.',
     type: 'DatePickerTriggerSlotProps'
-  },
-  {
-    name: 'target',
-    description: 'Custom trigger renderer for the picker.',
-    type: 'DatePickerTriggerSlotProps',
-    deprecated: 'Use `#trigger` instead. `#target` remains as a back-compat alias through v1.x.'
   },
   {
     name: 'prefix',
@@ -230,9 +179,9 @@
 
   const datePickerEmits = [
   {
-    name: 'update:modelValue',
-    description: 'Fired when the model value changes.',
-    type: '[value: string]'
+    name: 'update:open',
+    description: 'Fired when the open state changes.',
+    type: '[value: boolean]'
   },
   {
     name: 'change',
@@ -240,35 +189,31 @@
     type: '[value: string]'
   },
   {
-    name: 'update:open',
-    description: 'Fired when the open state changes.',
-    type: '[value: boolean]'
+    name: 'update:modelValue',
+    description: 'Fired when the model value changes.',
+    type: '[value: string]'
+  }
+]
+
+  const datePickerExposed = [
+  {
+    name: 'open',
+    description: 'Opens the panel. A disabled picker stays closed.',
+    type: '() => void'
+  },
+  {
+    name: 'close',
+    description: 'Closes the panel.',
+    type: '() => void'
+  },
+  {
+    name: 'focus',
+    description: 'Moves focus to the input. With a custom `#trigger`, it focuses the first\nfocusable element inside it.',
+    type: '(options?: FocusOptions) => void'
   }
 ]
 
   const dateRangePickerProps = [
-  {
-    name: 'value',
-    description: 'Uncontrolled initial range value as `[from, to]` in `YYYY-MM-DD` format.',
-    required: false,
-    type: 'string[]',
-    default: '[]',
-    deprecated: 'Use `modelValue` with `v-model` instead.'
-  },
-  {
-    name: 'modelValue',
-    description: 'Controlled range value as `[from, to]` in `YYYY-MM-DD` format, or `[]` for no selection.',
-    required: false,
-    type: 'string[]',
-    default: '[]'
-  },
-  {
-    name: 'dualPane',
-    description: 'Render two calendar panels side by side (current month + next month).',
-    required: false,
-    type: 'boolean',
-    default: 'false'
-  },
   {
     name: 'side',
     description: 'Preferred popover side relative to the trigger.',
@@ -286,13 +231,6 @@
     description: 'Gap between the trigger and popover content in pixels.',
     required: false,
     type: 'number'
-  },
-  {
-    name: 'placement',
-    description: 'Preferred popover placement relative to the trigger.',
-    required: false,
-    type: 'DatePickerPlacement',
-    deprecated: 'Use `side` and `align` instead.'
   },
   {
     name: 'format',
@@ -348,14 +286,6 @@
     default: 'true'
   },
   {
-    name: 'readonly',
-    description: 'Prevents manual typing while keeping the picker interactive.',
-    required: false,
-    type: 'boolean',
-    default: 'false',
-    deprecated: 'Use `typeable: false` instead.'
-  },
-  {
     name: 'disabled',
     description: 'Disables the trigger input and calendar interactions.',
     required: false,
@@ -376,14 +306,6 @@
     type: 'boolean'
   },
   {
-    name: 'autoClose',
-    description: 'Closes the popover after a value is picked.',
-    required: false,
-    type: 'boolean',
-    default: 'true',
-    deprecated: 'Use `keepOpen` instead (inverse semantics: `autoClose: false` → `keepOpen: true`).'
-  },
-  {
     name: 'min',
     description: 'Earliest selectable date. Accepts `YYYY-MM-DD` (or, for `DateTimePicker`,\n`YYYY-MM-DD HH:mm:ss` for second-level granularity).',
     required: false,
@@ -402,19 +324,18 @@
     type: '((date: Dayjs) => boolean)'
   },
   {
-    name: 'allowCustom',
-    description: 'Allows users to type custom date text into the input.',
+    name: 'modelValue',
+    description: 'Controlled range value as `[from, to]` in `YYYY-MM-DD` format, or `[]` for\nno selection. `DateRangeValue` types both sides of `v-model` (INP-Q12): the\nprop was `string[]`, which let a one-element array in and made a round-trip\nthrough the model fail to type-check.',
     required: false,
-    type: 'boolean',
-    default: 'true',
-    deprecated: 'Use `typeable: false` instead.'
+    type: 'DateRangeValue',
+    default: '[]'
   },
   {
-    name: 'inputClass',
-    description: 'Additional classes applied to the trigger input.',
+    name: 'dualPane',
+    description: 'Render two calendar panels side by side (current month + next month).',
     required: false,
-    type: 'string | string[] | Record<string, boolean>',
-    deprecated: 'Apply `class` directly to the DatePicker component element to control width.'
+    type: 'boolean',
+    default: 'false'
   },
   {
     name: 'label',
@@ -424,19 +345,19 @@
   },
   {
     name: 'description',
-    description: 'Helper text rendered below the input.\nHidden when `error` is set.',
+    description: 'Helper text rendered below the input.\nHidden when `error` is set. A `#description` slot is not: it renders\nbeside the error, and is referenced alongside it.',
     required: false,
     type: 'string'
   },
   {
     name: 'error',
-    description: 'Error message rendered below the input. When set, the control receives\n`aria-invalid="true"` and `data-state="invalid"`. May be either a string\nor an `Error` object whose `messages?: string[]` is rendered as stacked\nlines (with `Error.message` as the fallback).',
+    description: 'Error message rendered below the input. When set, the control receives\n`aria-invalid="true"` and `data-state="invalid"`. Takes a string, an\narray of strings, or an `Error` whose `messages` are rendered as stacked\nlines (with `Error.message` as the fallback). This is the same value\n`ErrorMessage.message` takes. An empty array and an empty string both\nmean no error.',
     required: false,
-    type: 'string | FrappeUIError'
+    type: 'ErrorMessageValue'
   },
   {
     name: 'required',
-    description: 'Marks the field as required. Renders an asterisk next to the label and\nforwards `required` / `aria-required` to the underlying control.',
+    description: 'Marks the field as required. Renders an asterisk next to the label, with\n`sr-only` text that announces it, and forwards `required` /\n`aria-required` to the underlying control where the control\'s role allows\nit. `data-required` is set either way.',
     required: false,
     type: 'boolean'
   },
@@ -453,12 +374,6 @@
     name: 'trigger',
     description: '',
     type: 'DatePickerTriggerSlotProps'
-  },
-  {
-    name: 'target',
-    description: '',
-    type: 'DatePickerTriggerSlotProps',
-    deprecated: 'Use `#trigger` instead.'
   },
   {
     name: 'prefix',
@@ -479,9 +394,9 @@
 
   const dateRangePickerEmits = [
   {
-    name: 'update:modelValue',
-    description: 'Fired when the model value changes.',
-    type: '[value: DateRangeValue]'
+    name: 'update:open',
+    description: 'Fired when the open state changes.',
+    type: '[value: boolean]'
   },
   {
     name: 'change',
@@ -489,49 +404,31 @@
     type: '[value: DateRangeValue]'
   },
   {
-    name: 'update:open',
-    description: 'Fired when the open state changes.',
-    type: '[value: boolean]'
+    name: 'update:modelValue',
+    description: 'Fired when the model value changes.',
+    type: '[value: DateRangeValue]'
+  }
+]
+
+  const dateRangePickerExposed = [
+  {
+    name: 'open',
+    description: 'Opens the panel. A disabled picker stays closed.',
+    type: '() => void'
+  },
+  {
+    name: 'close',
+    description: 'Closes the panel.',
+    type: '() => void'
+  },
+  {
+    name: 'focus',
+    description: 'Moves focus to the input. With a custom `#trigger`, it focuses the first\nfocusable element inside it.',
+    type: '(options?: FocusOptions) => void'
   }
 ]
 
   const dateTimePickerProps = [
-  {
-    name: 'value',
-    description: 'Uncontrolled initial value for the picker.',
-    required: false,
-    type: 'string',
-    default: '""',
-    deprecated: 'Use `modelValue` with `v-model` instead.'
-  },
-  {
-    name: 'modelValue',
-    description: 'Controlled value for the picker.',
-    required: false,
-    type: 'string',
-    default: '""'
-  },
-  {
-    name: 'minDateTime',
-    description: 'Earliest selectable date-time in `YYYY-MM-DD HH:mm:ss` format.',
-    required: false,
-    type: 'string',
-    deprecated: 'Use `min` instead.'
-  },
-  {
-    name: 'maxDateTime',
-    description: 'Latest selectable date-time in `YYYY-MM-DD HH:mm:ss` format.',
-    required: false,
-    type: 'string',
-    deprecated: 'Use `max` instead.'
-  },
-  {
-    name: 'allowCustomTime',
-    description: 'Allows typing a custom time into the embedded time picker.',
-    required: false,
-    type: 'boolean',
-    default: 'true'
-  },
   {
     name: 'side',
     description: 'Preferred popover side relative to the trigger.',
@@ -549,13 +446,6 @@
     description: 'Gap between the trigger and popover content in pixels.',
     required: false,
     type: 'number'
-  },
-  {
-    name: 'placement',
-    description: 'Preferred popover placement relative to the trigger.',
-    required: false,
-    type: 'DatePickerPlacement',
-    deprecated: 'Use `side` and `align` instead.'
   },
   {
     name: 'format',
@@ -611,14 +501,6 @@
     default: 'true'
   },
   {
-    name: 'readonly',
-    description: 'Prevents manual typing while keeping the picker interactive.',
-    required: false,
-    type: 'boolean',
-    default: 'false',
-    deprecated: 'Use `typeable: false` instead.'
-  },
-  {
     name: 'disabled',
     description: 'Disables the trigger input and calendar interactions.',
     required: false,
@@ -639,14 +521,6 @@
     type: 'boolean'
   },
   {
-    name: 'autoClose',
-    description: 'Closes the popover after a value is picked.',
-    required: false,
-    type: 'boolean',
-    default: 'true',
-    deprecated: 'Use `keepOpen` instead (inverse semantics: `autoClose: false` → `keepOpen: true`).'
-  },
-  {
     name: 'min',
     description: 'Earliest selectable date. Accepts `YYYY-MM-DD` (or, for `DateTimePicker`,\n`YYYY-MM-DD HH:mm:ss` for second-level granularity).',
     required: false,
@@ -665,19 +539,11 @@
     type: '((date: Dayjs) => boolean)'
   },
   {
-    name: 'allowCustom',
-    description: 'Allows users to type custom date text into the input.',
+    name: 'modelValue',
+    description: 'Controlled value for the picker.',
     required: false,
-    type: 'boolean',
-    default: 'true',
-    deprecated: 'Use `typeable: false` instead.'
-  },
-  {
-    name: 'inputClass',
-    description: 'Additional classes applied to the trigger input.',
-    required: false,
-    type: 'string | string[] | Record<string, boolean>',
-    deprecated: 'Apply `class` directly to the DatePicker component element to control width.'
+    type: 'string',
+    default: '""'
   },
   {
     name: 'label',
@@ -687,19 +553,19 @@
   },
   {
     name: 'description',
-    description: 'Helper text rendered below the input.\nHidden when `error` is set.',
+    description: 'Helper text rendered below the input.\nHidden when `error` is set. A `#description` slot is not: it renders\nbeside the error, and is referenced alongside it.',
     required: false,
     type: 'string'
   },
   {
     name: 'error',
-    description: 'Error message rendered below the input. When set, the control receives\n`aria-invalid="true"` and `data-state="invalid"`. May be either a string\nor an `Error` object whose `messages?: string[]` is rendered as stacked\nlines (with `Error.message` as the fallback).',
+    description: 'Error message rendered below the input. When set, the control receives\n`aria-invalid="true"` and `data-state="invalid"`. Takes a string, an\narray of strings, or an `Error` whose `messages` are rendered as stacked\nlines (with `Error.message` as the fallback). This is the same value\n`ErrorMessage.message` takes. An empty array and an empty string both\nmean no error.',
     required: false,
-    type: 'string | FrappeUIError'
+    type: 'ErrorMessageValue'
   },
   {
     name: 'required',
-    description: 'Marks the field as required. Renders an asterisk next to the label and\nforwards `required` / `aria-required` to the underlying control.',
+    description: 'Marks the field as required. Renders an asterisk next to the label, with\n`sr-only` text that announces it, and forwards `required` /\n`aria-required` to the underlying control where the control\'s role allows\nit. `data-required` is set either way.',
     required: false,
     type: 'boolean'
   },
@@ -716,12 +582,6 @@
     name: 'trigger',
     description: '',
     type: 'DatePickerTriggerSlotProps'
-  },
-  {
-    name: 'target',
-    description: '',
-    type: 'DatePickerTriggerSlotProps',
-    deprecated: 'Use `#trigger` instead.'
   },
   {
     name: 'prefix',
@@ -742,9 +602,9 @@
 
   const dateTimePickerEmits = [
   {
-    name: 'update:modelValue',
-    description: 'Fired when the model value changes.',
-    type: '[value: string]'
+    name: 'update:open',
+    description: 'Fired when the open state changes.',
+    type: '[value: boolean]'
   },
   {
     name: 'change',
@@ -752,35 +612,59 @@
     type: '[value: string]'
   },
   {
-    name: 'update:open',
-    description: 'Fired when the open state changes.',
-    type: '[value: boolean]'
+    name: 'update:modelValue',
+    description: 'Fired when the model value changes.',
+    type: '[value: string]'
+  }
+]
+
+  const dateTimePickerExposed = [
+  {
+    name: 'open',
+    description: 'Opens the panel. A disabled picker stays closed.',
+    type: '() => void'
+  },
+  {
+    name: 'close',
+    description: 'Closes the panel.',
+    type: '() => void'
+  },
+  {
+    name: 'focus',
+    description: 'Moves focus to the input. With a custom `#trigger`, it focuses the first\nfocusable element inside it.',
+    type: '(options?: FocusOptions) => void'
   }
 ]
 </script>
+
 ## API Reference
 
 ### DatePicker
 
-<PropsTable name="DatePicker" :data="datePickerProps"/> 
+<PropsTable name="DatePicker" :data="datePickerProps"/>
 
-<SlotsTable :data="datePickerSlots"/> 
+<SlotsTable :data="datePickerSlots"/>
 
-<EmitsTable :data="datePickerEmits"/> 
+<EmitsTable :data="datePickerEmits"/>
+
+<ExposedTable :data="datePickerExposed"/>
 
 ### DateRangePicker
 
-<PropsTable folder="DatePicker" name="DateRangePicker" :data="dateRangePickerProps"/> 
+<PropsTable folder="DatePicker" name="DateRangePicker" :data="dateRangePickerProps"/>
 
-<SlotsTable :data="dateRangePickerSlots"/> 
+<SlotsTable :data="dateRangePickerSlots"/>
 
-<EmitsTable :data="dateRangePickerEmits"/> 
+<EmitsTable :data="dateRangePickerEmits"/>
+
+<ExposedTable :data="dateRangePickerExposed"/>
 
 ### DateTimePicker
 
-<PropsTable folder="DatePicker" name="DateTimePicker" :data="dateTimePickerProps"/> 
+<PropsTable folder="DatePicker" name="DateTimePicker" :data="dateTimePickerProps"/>
 
-<SlotsTable :data="dateTimePickerSlots"/> 
+<SlotsTable :data="dateTimePickerSlots"/>
 
-<EmitsTable :data="dateTimePickerEmits"/> 
+<EmitsTable :data="dateTimePickerEmits"/>
 
+<ExposedTable :data="dateTimePickerExposed"/>

@@ -1,5 +1,5 @@
 <template>
-  <Teleport to="body">
+  <Teleport :to="portalTarget || 'body'">
     <Transition
       enter-active-class="transition-opacity duration-150 ease-in-out"
       leave-active-class="transition-opacity duration-150 ease-in-out"
@@ -10,7 +10,7 @@
       <div
         v-if="open && currentImage"
         ref="imageContainer"
-        class="fixed inset-0 z-[100] flex touch-none flex-col items-center justify-center overflow-hidden bg-black-overlay-700"
+        class="fixed inset-0 z-[100] flex touch-none flex-col items-center justify-center overflow-hidden bg-black/70"
         role="dialog"
         aria-modal="true"
         aria-label="Image viewer"
@@ -39,7 +39,7 @@
 
         <div
           v-if="currentImage.alt"
-          class="absolute bottom-4 z-10 max-w-[min(90vw,48rem)] rounded bg-surface-gray-7 px-3 py-2 text-center text-sm text-ink-white transition-opacity duration-300"
+          class="absolute bottom-4 z-10 max-w-[min(90vw,48rem)] rounded-4 bg-surface-gray-7 px-3 py-2 text-center text-sm text-white transition-opacity duration-300"
           :class="{ 'pointer-events-none opacity-0': !isControlsVisible }"
         >
           {{ currentImage.alt }}
@@ -47,7 +47,7 @@
 
         <div
           ref="controlsBar"
-          class="absolute top-4 z-20 flex max-w-[calc(100vw-2rem)] flex-wrap items-center justify-center gap-2 rounded-lg bg-surface-gray-7 p-1.5 shadow-xl transition-opacity duration-300"
+          class="absolute top-4 z-20 flex max-w-[calc(100vw-2rem)] flex-wrap items-center justify-center gap-2 rounded-4 bg-surface-gray-7 p-1.5 shadow-xl transition-opacity duration-300"
           :class="{ 'pointer-events-none opacity-0': !isControlsVisible }"
           @touchstart.stop
           @touchmove.stop
@@ -61,11 +61,11 @@
               label="Previous image"
               tooltip="Previous image"
               variant="ghost"
-              class="!text-ink-white hover:!bg-surface-gray-6"
+              class="!text-white hover:!bg-surface-gray-6"
               @click.stop="previousImage"
             />
             <span
-              class="min-w-12 select-none text-center text-sm tabular-nums text-ink-white"
+              class="min-w-12 select-none text-center text-sm tabular-nums text-white"
               aria-live="polite"
             >
               {{ currentIndex + 1 }}/{{ images.length }}
@@ -75,7 +75,7 @@
               label="Next image"
               tooltip="Next image"
               variant="ghost"
-              class="!text-ink-white hover:!bg-surface-gray-6"
+              class="!text-white hover:!bg-surface-gray-6"
               @click.stop="nextImage"
             />
           </div>
@@ -86,14 +86,14 @@
               label="Zoom out"
               tooltip="Zoom out"
               variant="ghost"
-              class="!text-ink-white hover:!bg-surface-gray-6"
+              class="!text-white hover:!bg-surface-gray-6"
               @click.stop="zoomOut"
             />
             <Button
               :label="`${zoomLevel}%`"
               tooltip="Reset zoom"
               variant="ghost"
-              class="min-w-14 !text-ink-white hover:!bg-surface-gray-6"
+              class="min-w-14 !text-white hover:!bg-surface-gray-6"
               @click.stop="resetZoom"
             />
             <Button
@@ -101,7 +101,7 @@
               label="Zoom in"
               tooltip="Zoom in"
               variant="ghost"
-              class="!text-ink-white hover:!bg-surface-gray-6"
+              class="!text-white hover:!bg-surface-gray-6"
               @click.stop="zoomIn"
             />
           </div>
@@ -113,7 +113,7 @@
               label="Download image"
               tooltip="Download image"
               variant="ghost"
-              class="!text-ink-white hover:!bg-surface-gray-6"
+              class="!text-white hover:!bg-surface-gray-6"
               @click.stop="downloadImage"
             />
             <Button
@@ -121,7 +121,7 @@
               :label="isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'"
               :tooltip="isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'"
               variant="ghost"
-              class="hidden !text-ink-white hover:!bg-surface-gray-6 sm:inline-flex"
+              class="hidden !text-white hover:!bg-surface-gray-6 sm:inline-flex"
               @click.stop="toggleFullscreen"
             />
             <Button
@@ -129,7 +129,7 @@
               label="Close image viewer"
               tooltip="Close"
               variant="ghost"
-              class="!text-ink-white hover:!bg-surface-gray-6"
+              class="!text-white hover:!bg-surface-gray-6"
               @click.stop="close"
             />
           </div>
@@ -155,15 +155,17 @@ import { useImageNavigation } from '../../composables/useImageNavigation'
 import { useTouchHandler } from '../../composables/useTouchHandler'
 import { useZoomPan } from '../../composables/useZoomPan'
 import type { ImageViewerImage } from './types'
+import { usePortalTarget } from '../../composables/usePortalTarget'
+const portalTarget = usePortalTarget()
 
-import LucideChevronLeft from '~icons/lucide/chevron-left'
-import LucideChevronRight from '~icons/lucide/chevron-right'
-import LucideDownload from '~icons/lucide/download'
-import LucideMaximize from '~icons/lucide/maximize'
-import LucideMinimize from '~icons/lucide/minimize'
-import LucideMinus from '~icons/lucide/minus'
-import LucidePlus from '~icons/lucide/plus'
-import LucideX from '~icons/lucide/x'
+const LucideChevronLeft = 'lucide-chevron-left'
+const LucideChevronRight = 'lucide-chevron-right'
+const LucideDownload = 'lucide-download'
+const LucideMaximize = 'lucide-maximize'
+const LucideMinimize = 'lucide-minimize'
+const LucideMinus = 'lucide-minus'
+const LucidePlus = 'lucide-plus'
+const LucideX = 'lucide-x'
 
 const props = withDefaults(
   defineProps<{

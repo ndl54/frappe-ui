@@ -3,6 +3,7 @@
   import PropsTable from '@/components/Docs/PropsTable.vue'
   import SlotsTable from '@/components/Docs/SlotsTable.vue'
   import EmitsTable from '@/components/Docs/EmitsTable.vue'
+  import ExposedTable from '@/components/Docs/ExposedTable.vue'
 
   const propsData = [
   {
@@ -11,13 +12,6 @@
     required: false,
     type: 'string',
     default: '""'
-  },
-  {
-    name: 'value',
-    description: 'Uncontrolled initial value.',
-    required: false,
-    type: 'string',
-    deprecated: 'Use `modelValue` with `v-model` instead.'
   },
   {
     name: 'interval',
@@ -30,7 +24,7 @@
     name: 'options',
     description: 'Caller-provided option values; bypasses the generated grid.',
     required: false,
-    type: '{ value: string; label?: string; }[] | undefined',
+    type: '{ value: string; label?: string; }[]',
     default: '[]'
   },
   {
@@ -52,13 +46,6 @@
     type: 'number'
   },
   {
-    name: 'placement',
-    description: 'Combined side+align placement.',
-    required: false,
-    type: 'Placement',
-    deprecated: 'Use `side` and `align` instead.'
-  },
-  {
     name: 'placeholder',
     description: 'Placeholder text when no value is selected.',
     required: false,
@@ -69,8 +56,14 @@
     name: 'variant',
     description: 'Visual style variant.',
     required: false,
-    type: 'Variant',
+    type: 'InputVariant',
     default: '"subtle" as Variant'
+  },
+  {
+    name: 'size',
+    description: 'Visual size of the trigger input. Forwarded to the underlying `TextInput`.',
+    required: false,
+    type: 'InputSize'
   },
   {
     name: 'typeable',
@@ -80,41 +73,16 @@
     default: 'true'
   },
   {
-    name: 'readonly',
-    description: 'Prevents manual typing while keeping the picker interactive.',
-    required: false,
-    type: 'boolean',
-    default: 'false',
-    deprecated: 'Use `typeable: false` instead.'
-  },
-  {
-    name: 'allowCustom',
-    description: 'Allows users to type custom time values.',
-    required: false,
-    type: 'boolean',
-    default: 'true',
-    deprecated: 'Use `typeable: false` instead.'
-  },
-  {
     name: 'keepOpen',
     description: 'Keeps the popover open after a time is selected.',
     required: false,
     type: 'boolean'
   },
   {
-    name: 'autoClose',
-    description: 'Closes the popover after a value is picked.',
+    name: 'format',
+    description: 'Dayjs format string used for display. Default: `HH:mm`.',
     required: false,
-    type: 'boolean',
-    default: 'true',
-    deprecated: 'Use `keepOpen` (inverse semantics).'
-  },
-  {
-    name: 'use12Hour',
-    description: 'Use 12-hour (am/pm) format for display.',
-    required: false,
-    type: 'boolean',
-    default: 'true'
+    type: 'string'
   },
   {
     name: 'disabled',
@@ -156,29 +124,48 @@
     type: 'string'
   },
   {
-    name: 'minTime',
-    description: 'Minimum selectable time as `HH:mm[:ss]`.',
+    name: 'label',
+    description: 'Label rendered above (or beside, for binary controls) the input.',
     required: false,
-    type: 'string',
-    deprecated: 'Use `min` instead.'
+    type: 'string'
   },
   {
-    name: 'maxTime',
-    description: 'Maximum selectable time as `HH:mm[:ss]`.',
+    name: 'description',
+    description: 'Helper text rendered below the input.\nHidden when `error` is set. A `#description` slot is not: it renders\nbeside the error, and is referenced alongside it.',
     required: false,
-    type: 'string',
-    deprecated: 'Use `max` instead.'
+    type: 'string'
   },
   {
-    name: 'scrollMode',
-    description: 'Scroll behavior when opening the list.',
+    name: 'error',
+    description: 'Error message rendered below the input. When set, the control receives\n`aria-invalid="true"` and `data-state="invalid"`. Takes a string, an\narray of strings, or an `Error` whose `messages` are rendered as stacked\nlines (with `Error.message` as the fallback). This is the same value\n`ErrorMessage.message` takes. An empty array and an empty string both\nmean no error.',
     required: false,
-    type: '"start" | "center" | "nearest"',
-    deprecated: 'Scrolling is always centered now.'
+    type: 'ErrorMessageValue'
+  },
+  {
+    name: 'required',
+    description: 'Marks the field as required. Renders an asterisk next to the label, with\n`sr-only` text that announces it, and forwards `required` /\n`aria-required` to the underlying control where the control\'s role allows\nit. `data-required` is set either way.',
+    required: false,
+    type: 'boolean'
+  },
+  {
+    name: 'id',
+    description: 'HTML id of the underlying control. Auto-generated via `useId()` if omitted.',
+    required: false,
+    type: 'string'
   }
 ]
 
   const slotsData = [
+  {
+    name: 'label',
+    description: 'Overrides the rendered label content. Receives `{ required }`.',
+    type: '{ required: boolean; }'
+  },
+  {
+    name: 'description',
+    description: 'Overrides the rendered description content.',
+    type: 'any'
+  },
   {
     name: 'prefix',
     description: 'Rendered inside the trigger input, before the typed value.',
@@ -187,15 +174,15 @@
   {
     name: 'suffix',
     description: 'Rendered inside the trigger input, after the typed value. Defaults to a\nchevron-down that toggles the popover.',
-    type: '{ togglePopover: () => void; isOpen: boolean; }'
+    type: '{ open: boolean; disabled: boolean; setOpen: (value: boolean) => void; close: () => void; }'
   }
 ]
 
   const emitsData = [
   {
-    name: 'update:modelValue',
-    description: 'Fired when the model value changes.',
-    type: '[value: string]'
+    name: 'update:open',
+    description: 'Fired when the open state changes.',
+    type: '[value: boolean]'
   },
   {
     name: 'change',
@@ -203,37 +190,37 @@
     type: '[value: string]'
   },
   {
-    name: 'open',
-    description: 'Fired when the component opens.',
-    type: '[]'
-  },
+    name: 'update:modelValue',
+    description: 'Fired when the model value changes.',
+    type: '[value: string]'
+  }
+]
+
+  const exposedData = [
   {
-    name: 'update:open',
-    description: 'Fired when the open state changes.',
-    type: '[value: boolean]'
+    name: 'open',
+    description: 'Opens the panel. A disabled picker stays closed.',
+    type: '() => void'
   },
   {
     name: 'close',
-    description: 'Fired when the component closes.',
-    type: '[]'
+    description: 'Closes the panel.',
+    type: '() => void'
   },
   {
-    name: 'input-invalid',
-    description: '',
-    type: '[input: string]'
-  },
-  {
-    name: 'invalid-change',
-    description: '',
-    type: '[invalid: boolean]'
+    name: 'focus',
+    description: 'Moves focus to the input.',
+    type: '(options?: FocusOptions) => void'
   }
 ]
 </script>
+
 ## API Reference
 
-<PropsTable name="TimePicker" :data="propsData"/> 
+<PropsTable name="TimePicker" :data="propsData"/>
 
-<SlotsTable :data="slotsData"/> 
+<SlotsTable :data="slotsData"/>
 
-<EmitsTable :data="emitsData"/> 
+<EmitsTable :data="emitsData"/>
 
+<ExposedTable :data="exposedData"/>

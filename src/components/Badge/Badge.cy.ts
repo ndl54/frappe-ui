@@ -1,5 +1,6 @@
 import Badge from './Badge.vue'
 import { h } from 'vue'
+import { _resetResolvePropValue } from '../../utils/resolvePropValue'
 
 describe('<Badge />', () => {
   it('renders default badge', () => {
@@ -41,7 +42,7 @@ describe('<Badge />', () => {
         label: 'Blue',
       },
     })
-    cy.get('.inline-flex.rounded-full').should('have.class', 'text-ink-blue-2')
+    cy.get('.inline-flex.rounded-full').should('have.class', 'text-ink-blue-7')
     cy.get('.inline-flex.rounded-full').should('have.class', 'bg-surface-blue-2')
 
     // Green
@@ -51,18 +52,18 @@ describe('<Badge />', () => {
         label: 'Green',
       },
     })
-    cy.get('.inline-flex.rounded-full').should('have.class', 'text-ink-green-3')
+    cy.get('.inline-flex.rounded-full').should('have.class', 'text-ink-green-7')
     cy.get('.inline-flex.rounded-full').should('have.class', 'bg-surface-green-2')
 
-    // Orange
+    // Amber
     cy.mount(Badge, {
       props: {
-        theme: 'orange',
-        label: 'Orange',
+        theme: 'amber',
+        label: 'Amber',
       },
     })
-    cy.get('.inline-flex.rounded-full').should('have.class', 'text-ink-amber-3')
-    cy.get('.inline-flex.rounded-full').should('have.class', 'bg-surface-amber-1')
+    cy.get('.inline-flex.rounded-full').should('have.class', 'text-ink-amber-7')
+    cy.get('.inline-flex.rounded-full').should('have.class', 'bg-surface-amber-2')
 
     // Red
     cy.mount(Badge, {
@@ -71,20 +72,41 @@ describe('<Badge />', () => {
         label: 'Red',
       },
     })
-    cy.get('.inline-flex.rounded-full').should('have.class', 'text-ink-red-4')
+    cy.get('.inline-flex.rounded-full').should('have.class', 'text-ink-red-7')
     cy.get('.inline-flex.rounded-full').should('have.class', 'bg-surface-red-2')
+
+    // Violet
+    cy.mount(Badge, {
+      props: {
+        theme: 'violet',
+        label: 'Violet',
+      },
+    })
+    cy.get('.inline-flex.rounded-full').should('have.class', 'text-ink-violet-7')
+    cy.get('.inline-flex.rounded-full').should('have.class', 'bg-surface-violet-2')
   })
 
   it('renders different variants with gray theme', () => {
-    // Solid
+    // Solid (gray uses semantic token; non-gray solids use raw palette)
     cy.mount(Badge, {
       props: {
         variant: 'solid',
         label: 'Solid',
       },
     })
-    cy.get('.inline-flex.rounded-full').should('have.class', 'text-ink-white')
-    cy.get('.inline-flex.rounded-full').should('have.class', 'bg-surface-gray-7')
+    cy.get('.inline-flex.rounded-full').should('have.class', 'text-ink-base')
+    cy.get('.inline-flex.rounded-full').should('have.class', 'bg-surface-gray-10')
+
+    // Solid with a chromatic theme uses white text
+    cy.mount(Badge, {
+      props: {
+        theme: 'red',
+        variant: 'solid',
+        label: 'Solid red',
+      },
+    })
+    cy.get('.inline-flex.rounded-full').should('have.class', 'text-white')
+    cy.get('.inline-flex.rounded-full').should('have.class', 'bg-surface-red-7')
 
     // Subtle (default)
     cy.mount(Badge, {
@@ -104,8 +126,7 @@ describe('<Badge />', () => {
       },
     })
     cy.get('.inline-flex.rounded-full').should('have.class', 'text-ink-gray-6')
-    cy.get('.inline-flex.rounded-full').should('have.class', 'bg-transparent')
-    cy.get('.inline-flex.rounded-full').should('have.class', 'border-outline-gray-1')
+    cy.get('.inline-flex.rounded-full').should('have.class', 'border-outline-gray-2')
 
     // Ghost
     cy.mount(Badge, {
@@ -115,7 +136,6 @@ describe('<Badge />', () => {
       },
     })
     cy.get('.inline-flex.rounded-full').should('have.class', 'text-ink-gray-6')
-    cy.get('.inline-flex.rounded-full').should('have.class', 'bg-transparent')
   })
 
   it('renders different sizes', () => {
@@ -149,7 +169,7 @@ describe('<Badge />', () => {
       },
     })
     cy.get('.inline-flex.rounded-full').should('have.class', 'h-6')
-    cy.get('.inline-flex.rounded-full').should('have.class', 'text-sm')
+    cy.get('.inline-flex.rounded-full').should('have.class', 'text-[13px]')
     cy.get('.inline-flex.rounded-full').should('have.class', 'px-2')
   })
 
@@ -250,7 +270,7 @@ describe('<Badge />', () => {
         prefix: () => h(TestIcon),
       },
     })
-    cy.get('[data-cy="prefix-icon"]').parent().should('have.class', 'max-h-4')
+    cy.get('[data-cy="prefix-icon"]').parent().should('have.class', 'size-2.5')
 
     // Test with md size (default)
     cy.mount(Badge, {
@@ -259,7 +279,7 @@ describe('<Badge />', () => {
         prefix: () => h(TestIcon),
       },
     })
-    cy.get('[data-cy="prefix-icon"]').parent().should('have.class', 'max-h-4')
+    cy.get('[data-cy="prefix-icon"]').parent().should('have.class', 'size-2.5')
 
     // Test with lg size
     cy.mount(Badge, {
@@ -268,6 +288,86 @@ describe('<Badge />', () => {
         prefix: () => h(TestIcon),
       },
     })
-    cy.get('[data-cy="prefix-icon"]').parent().should('have.class', 'max-h-6')
+    cy.get('[data-cy="prefix-icon"]').parent().should('have.class', 'size-3')
+  })
+
+  // A value outside a prop's union used to reach a raw table lookup. For
+  // `theme` that was the first of two chained lookups, so the second one read
+  // a property of `undefined` and threw `TypeError: Cannot read properties of
+  // undefined (reading 'subtle')` mid-render — the badge vanished and the
+  // error took the parent render with it. `theme="orange"` (a removed alias,
+  // still live in consumer apps) is the case that made this reachable.
+  describe('unsupported prop values', () => {
+    beforeEach(() => {
+      _resetResolvePropValue()
+    })
+
+    it('falls back to the default theme instead of throwing', () => {
+      cy.mount(Badge, {
+        props: { theme: 'orange' as any, label: 'Orange' },
+      })
+
+      // Renders at all — this is the regression guard.
+      cy.get('.inline-flex.rounded-full').should('have.text', 'Orange')
+      // ...wearing the default gray subtle classes.
+      cy.get('.inline-flex.rounded-full').should('have.class', 'text-ink-gray-6')
+      cy.get('.inline-flex.rounded-full').should(
+        'have.class',
+        'bg-surface-gray-2',
+      )
+    })
+
+    it('warns in dev, naming the component, prop and value', () => {
+      cy.window().then((win) => {
+        cy.spy(win.console, 'warn').as('consoleWarn')
+      })
+      cy.mount(Badge, { props: { theme: 'orange' as any, label: 'Orange' } })
+
+      cy.get('@consoleWarn').should(
+        'have.been.calledWithMatch',
+        /Badge\.theme="orange" is not a supported value.*falling back to "gray".*gray, blue, green, amber, red, violet/,
+      )
+    })
+
+    it('warns once per offending value, not once per render', () => {
+      cy.window().then((win) => {
+        cy.spy(win.console, 'warn').as('consoleWarn')
+      })
+      cy.mount(Badge, { props: { theme: 'orange' as any, label: 'A' } })
+      cy.mount(Badge, { props: { theme: 'orange' as any, label: 'B' } })
+
+      cy.get('@consoleWarn').should('have.been.calledOnce')
+    })
+
+    it('falls back to the default variant', () => {
+      cy.mount(Badge, {
+        props: { variant: 'bogus' as any, label: 'Variant' },
+      })
+      cy.get('.inline-flex.rounded-full').should('have.class', 'text-ink-gray-6')
+      cy.get('.inline-flex.rounded-full').should(
+        'have.class',
+        'bg-surface-gray-2',
+      )
+    })
+
+    it('falls back to the default size', () => {
+      cy.mount(Badge, {
+        props: { size: 'bogus' as any, label: 'Size' },
+      })
+      cy.get('.inline-flex.rounded-full').should('have.class', 'h-5')
+      cy.get('.inline-flex.rounded-full').should('have.class', 'text-xs')
+    })
+
+    it('still renders every supported theme unchanged', () => {
+      cy.mount(Badge, { props: { theme: 'amber', label: 'Amber' } })
+      cy.get('.inline-flex.rounded-full').should(
+        'have.class',
+        'text-ink-amber-7',
+      )
+      cy.get('.inline-flex.rounded-full').should(
+        'have.class',
+        'bg-surface-amber-2',
+      )
+    })
   })
 })

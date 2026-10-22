@@ -34,12 +34,12 @@ const content = ref(`
   <p>It owns the <code>useEditor</code> instance directly and renders the menu primitives itself.</p>
 `)
 
-// StarterKit ships its own link mark, so disable it before adding the frappe
-// Link extension — otherwise tiptap warns about a duplicate "link" extension.
+// StarterKit never registers a link mark, so the frappe Link extension can be
+// added next to it with no duplicate-name warning.
 const editor = useEditor({
   content,
   extensions: [
-    StarterKit.configure({ link: false }),
+    StarterKit,
     Placeholder.configure({ placeholder: 'Write something…' }),
     Link,
   ],
@@ -53,7 +53,7 @@ const wordCount = computed(() => {
 
 <template>
   <div class="w-full max-w-2xl">
-    <div class="overflow-hidden rounded-lg border border-outline-gray-2 bg-surface-white">
+    <div class="overflow-hidden rounded-6 border border-outline-gray-2 bg-surface-base">
       <EditorBubbleMenu :editor="editor" :items="toolbar" />
       <EditorFloatingMenu :editor="editor" :items="toolbar" />
       <div class="border-b border-outline-gray-1 px-2 py-1.5">

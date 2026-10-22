@@ -3,20 +3,21 @@
   import PropsTable from '@/components/Docs/PropsTable.vue'
   import SlotsTable from '@/components/Docs/SlotsTable.vue'
   import EmitsTable from '@/components/Docs/EmitsTable.vue'
+  import ExposedTable from '@/components/Docs/ExposedTable.vue'
 
   const propsData = [
   {
     name: 'size',
     description: 'Size of the select input.',
     required: false,
-    type: '"md" | "sm" | "lg" | "xl"',
+    type: 'InputSize',
     default: '"sm"'
   },
   {
     name: 'variant',
     description: 'Visual style of the select input.',
     required: false,
-    type: '"subtle" | "outline" | "ghost"',
+    type: 'InputVariant',
     default: '"subtle"'
   },
   {
@@ -34,9 +35,9 @@
   },
   {
     name: 'modelValue',
-    description: 'The currently selected value.',
+    description: 'The currently selected value. `null` when nothing is selected.',
     required: false,
-    type: 'SelectOptionValue'
+    type: 'SelectOptionValue | null'
   },
   {
     name: 'open',
@@ -60,6 +61,30 @@
     default: '"No options"'
   },
   {
+    name: 'side',
+    description: 'Preferred popover side. Defaults to `\'bottom\'`.\n\nSetting `side`, `align`, or `offset` switches the menu from its default\nitem-aligned placement (anchored over the trigger, macOS-style) to\nstandard popper placement below/beside the trigger.',
+    required: false,
+    type: 'PopoverSide'
+  },
+  {
+    name: 'align',
+    description: 'Preferred popover alignment. Defaults to `\'start\'`. See `side`.',
+    required: false,
+    type: 'PopoverAlign'
+  },
+  {
+    name: 'offset',
+    description: 'Gap in px between trigger and content. Defaults to `4`. See `side`.',
+    required: false,
+    type: 'number'
+  },
+  {
+    name: 'portalTo',
+    description: 'Teleport target for the popover content. Unset, an embedding host\'s target is used, else `body`.',
+    required: false,
+    type: 'PortalTarget'
+  },
+  {
     name: 'label',
     description: 'Label rendered above (or beside, for binary controls) the input.',
     required: false,
@@ -67,19 +92,19 @@
   },
   {
     name: 'description',
-    description: 'Helper text rendered below the input.\nHidden when `error` is set.',
+    description: 'Helper text rendered below the input.\nHidden when `error` is set. A `#description` slot is not: it renders\nbeside the error, and is referenced alongside it.',
     required: false,
     type: 'string'
   },
   {
     name: 'error',
-    description: 'Error message rendered below the input. When set, the control receives\n`aria-invalid="true"` and `data-state="invalid"`. May be either a string\nor an `Error` object whose `messages?: string[]` is rendered as stacked\nlines (with `Error.message` as the fallback).',
+    description: 'Error message rendered below the input. When set, the control receives\n`aria-invalid="true"` and `data-state="invalid"`. Takes a string, an\narray of strings, or an `Error` whose `messages` are rendered as stacked\nlines (with `Error.message` as the fallback). This is the same value\n`ErrorMessage.message` takes. An empty array and an empty string both\nmean no error.',
     required: false,
-    type: 'string | FrappeUIError'
+    type: 'ErrorMessageValue'
   },
   {
     name: 'required',
-    description: 'Marks the field as required. Renders an asterisk next to the label and\nforwards `required` / `aria-required` to the underlying control.',
+    description: 'Marks the field as required. Renders an asterisk next to the label, with\n`sr-only` text that announces it, and forwards `required` /\n`aria-required` to the underlying control where the control\'s role allows\nit. `data-required` is set either way.',
     required: false,
     type: 'boolean'
   },
@@ -95,7 +120,7 @@
   {
     name: 'trigger',
     description: 'Fully custom trigger renderer.',
-    type: 'SelectTriggerSlotProps'
+    type: 'SelectSlotProps'
   },
   {
     name: 'label',
@@ -110,18 +135,27 @@
   {
     name: 'prefix',
     description: 'Content rendered before the trigger value. Receives the same shape\nas `#trigger` and `#suffix` (`SelectSlotProps`).',
-    type: 'SelectTriggerSlotProps'
+    type: 'SelectSlotProps'
   },
   {
     name: 'suffix',
     description: 'Content rendered after the trigger value. Providing this slot\n**replaces the default chevron** — render your own fallback when\nyour slot content is conditional.',
-    type: 'SelectTriggerSlotProps'
+    type: 'SelectSlotProps'
   },
   {
-    name: 'option',
-    description: 'Shared renderer for option labels.',
-    type: 'SelectItemSlotProps',
-    deprecated: 'use `#item-label` for per-row label customization. `#option` remains as a back-compat alias through v1.x.'
+    name: 'item',
+    description: 'Replaces the entire option row, including the row shell. A per-option\n`slot` (`#item-<name>`) takes precedence over this slot.',
+    type: 'SelectItemSlotProps'
+  },
+  {
+    name: 'empty',
+    description: 'Fallback content rendered when no options are available.',
+    type: 'any'
+  },
+  {
+    name: 'footer',
+    description: 'Content rendered below the option list. Stays pinned below the\nscrollable options. Receives the same shape as `#trigger`.',
+    type: 'SelectSlotProps'
   },
   {
     name: 'item-prefix',
@@ -137,37 +171,42 @@
     name: 'item-suffix',
     description: 'Content rendered after the standard option label.',
     type: 'SelectItemSlotProps'
-  },
-  {
-    name: 'empty',
-    description: 'Fallback content rendered when no options are available.',
-    type: 'any'
-  },
-  {
-    name: 'footer',
-    description: 'Content rendered below the option list. Stays pinned below the scrollable options.',
-    type: 'SelectFooterSlotProps'
   }
 ]
 
   const emitsData = [
   {
-    name: 'update:modelValue',
-    description: 'Fired when the model value changes.',
-    type: '[value: SelectOptionValue | undefined]'
-  },
-  {
     name: 'update:open',
     description: 'Fired when the open state changes.',
     type: '[value: boolean]'
+  },
+  {
+    name: 'update:modelValue',
+    description: 'Fired when the model value changes.',
+    type: '[value: SelectOptionValue | null | undefined]'
+  }
+]
+
+  const exposedData = [
+  {
+    name: 'clear',
+    description: 'Clears the current selection. It leaves the search query alone.',
+    type: '() => void'
+  },
+  {
+    name: 'focus',
+    description: 'Moves focus to the component\'s interactive element.',
+    type: '(options?: FocusOptions) => void'
   }
 ]
 </script>
+
 ## API Reference
 
-<PropsTable name="Select" :data="propsData"/> 
+<PropsTable name="Select" :data="propsData"/>
 
-<SlotsTable :data="slotsData"/> 
+<SlotsTable :data="slotsData"/>
 
-<EmitsTable :data="emitsData"/> 
+<EmitsTable :data="emitsData"/>
 
+<ExposedTable :data="exposedData"/>

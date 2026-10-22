@@ -1,20 +1,36 @@
 <template>
   <DialogRoot v-model:open="isOpen">
-    <DialogPortal>
+    <DialogPortal :to="portalTarget">
       <DialogOverlay
-        class="fixed inset-0 bg-black-overlay-200 dark:bg-black-overlay-700 overflow-y-auto dialog-overlay outline-none"
-        :data-dialog="resolved.title"
+        class="fixed inset-0 z-50 bg-black-overlay-200 dark:bg-black-overlay-700 dialog-overlay outline-none"
+        :data-dialog="props.title"
         @after-leave="$emit('after-leave')"
+      />
+      <!--
+        The scroll container is a plain element, NOT the DialogOverlay, and the
+        content is a sibling of the overlay (the standard reka structure).
+        reka-ui's DialogOverlay has an internal `@pointerdown.left.prevent`
+        (DialogOverlayImpl); when focusable content is nested inside the overlay,
+        a pointerdown on any field bubbles up to it and its `preventDefault()`
+        cancels the browser's native focus-on-click. The result: only the
+        auto-focused field is usable and clicking a second field (e.g. a
+        textarea) silently fails, dropping the keystrokes into the first field.
+        Keeping the content out of the overlay restores click-to-focus.
+      -->
+      <div
+        class="fixed inset-0 z-50 overflow-y-auto dialog-scroll-container"
+        :class="{ 'pointer-events-none': !isOpen }"
       >
         <div
           class="flex min-h-screen flex-col items-center px-4 py-4 text-center"
           :class="dialogPositionClasses"
           :style="dialogPositionStyles"
-          :data-position="resolved.position || 'center'"
+          :data-position="props.position"
         >
           <DialogContent
             ref="contentRef"
-            class="my-8 inline-block w-full transform overflow-hidden rounded-xl bg-surface-modal text-start align-middle shadow-xl dialog-content focus-visible:outline-none"
+            data-slot="content"
+            class="my-8 inline-block w-full transform overflow-hidden rounded-7 bg-surface-elevation-1 text-start align-middle shadow-xl dialog-content focus-visible:outline-none"
             :class="sizeClass"
             @open-auto-focus="handleOpenAutoFocus"
             @escape-key-down="
@@ -24,65 +40,53 @@
             "
             @interact-outside="
               (e: Event) => {
-                if (!isDismissible) e.preventDefault()
+                if (!isDismissible || isEditorFloating(e)) e.preventDefault()
               }
             "
           >
             <!-- bare: no chrome, render default slot directly -->
-            <slot v-if="resolved.bare" :close="close" />
-
-            <!-- legacy `#body` slot: full layout override (deprecated) -->
-            <slot v-else-if="$slots.body" name="body" />
+            <slot v-if="props.bare" :close="close" />
 
             <template v-else>
-              <!-- legacy `#body-main`: full middle override (deprecated) -->
-              <slot v-if="$slots['body-main']" name="body-main" />
-              <div v-else class="bg-surface-modal px-4 pb-6 pt-5 sm:px-6">
+              <div class="bg-surface-elevation-1 px-4 pb-6 pt-5 sm:px-6">
                 <div class="flex">
                   <div class="w-full flex-1">
-                    <!-- legacy `#body-header` (deprecated, warns + renders nothing if used; preserved for back-compat by rendering header) -->
-                    <slot v-if="$slots['body-header']" name="body-header" />
                     <div
-                      v-else-if="showHeader"
+                      v-if="showHeader"
                       class="mb-6 flex items-center justify-between"
                     >
                       <div class="flex items-center space-x-2 flex-1">
                         <div
-                          v-if="resolvedIcon"
+                          v-if="hasIcon"
+                          data-slot="icon"
                           class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full"
                           :class="dialogIconBgClasses"
                         >
                           <span
-                            v-if="isLucide(resolvedIcon.name)"
-                            :class="[
-                              resolvedIcon.name,
-                              'size-4',
-                              dialogIconClasses,
-                            ]"
+                            v-if="lucideIcon"
+                            :class="[lucideIcon, 'size-4', dialogIconClasses]"
                             aria-hidden="true"
                           />
-                          <FeatherIcon
+                          <component
+                            :is="componentIcon"
                             v-else
-                            :name="resolvedIcon.name"
-                            class="h-4 w-4"
+                            class="size-4"
                             :class="dialogIconClasses"
                             aria-hidden="true"
                           />
                         </div>
                         <DialogTitle as="header" class="flex-1">
                           <slot name="title" :close="close">
-                            <slot name="body-title">
-                              <h3
-                                v-if="resolved.title"
-                                class="text-2xl font-semibold leading-6 text-ink-gray-9"
-                              >
-                                {{ resolved.title }}
-                              </h3>
-                            </slot>
+                            <h3
+                              v-if="props.title"
+                              class="text-2xl-semibold leading-6 text-ink-gray-8"
+                            >
+                              {{ props.title }}
+                            </h3>
                           </slot>
                         </DialogTitle>
                       </div>
-                      <DialogClose v-if="resolved.showCloseButton" as-child>
+                      <DialogClose v-if="props.showCloseButton" as-child>
                         <Button variant="ghost" label="Close">
                           <template #icon>
                             <span class="lucide-x size-4 text-ink-gray-9" />
@@ -91,14 +95,12 @@
                       </DialogClose>
                     </div>
 
-                    <slot name="body-content">
-                      <slot :close="close">
-                        <DialogDescription as-child v-if="resolved.message">
-                          <p class="text-p-base text-ink-gray-7">
-                            {{ resolved.message }}
-                          </p>
-                        </DialogDescription>
-                      </slot>
+                    <slot :close="close">
+                      <DialogDescription as-child v-if="props.message">
+                        <p class="text-p-base text-ink-gray-7">
+                          {{ props.message }}
+                        </p>
+                      </DialogDescription>
                     </slot>
                   </div>
                 </div>
@@ -106,6 +108,7 @@
 
               <div
                 v-if="reactiveActions.length || $slots.actions"
+                data-slot="actions"
                 class="px-4 pb-7 pt-4 sm:px-6"
               >
                 <slot
@@ -132,15 +135,8 @@
             </template>
 
             <!-- close button when auto-header is suppressed but caller still wants a close affordance -->
-            <!-- Suppressed for legacy slots that own their own header chrome: `#body` is a full override, `#body-header` replaced the header (incl. close) in v0. -->
             <DialogClose
-              v-if="
-                resolved.showCloseButton &&
-                !showHeader &&
-                !resolved.bare &&
-                !$slots['body'] &&
-                !$slots['body-header']
-              "
+              v-if="props.showCloseButton && !showHeader && !props.bare"
               as-child
             >
               <Button
@@ -155,7 +151,7 @@
             </DialogClose>
           </DialogContent>
         </div>
-      </DialogOverlay>
+      </div>
     </DialogPortal>
   </DialogRoot>
 </template>
@@ -170,26 +166,22 @@ import {
   DialogDescription,
   DialogClose,
 } from 'reka-ui'
-import { computed, reactive, ref, useSlots, watchEffect } from 'vue'
+import { computed, reactive, ref, watchEffect } from 'vue'
 import type { ComponentPublicInstance } from 'vue'
 import { useAutofocusOnOpen } from '../../composables/useAutofocusOnOpen'
+import { usePortalTarget } from '../../composables/usePortalTarget'
 import { Button } from '../Button'
-import FeatherIcon from '../FeatherIcon.vue'
+import { useReactiveSlots } from '../../composables/useReactiveSlots'
 import {
-  warnFeatherIconUsage,
+  warnUnsupportedIconString,
+  warnUnsupportedIconObject,
   isLucideIconString,
 } from '../../utils/iconString'
-import { warnDeprecated } from '../../utils/warnDeprecated'
 import type {
   DialogProps,
   DialogEmits,
   DialogSlots,
-  DialogExposed,
-  DialogIcon,
-  DialogActionContext,
-  DialogOptions,
   DialogTheme,
-  DialogIconAppearance,
   DialogReactiveAction,
 } from './types'
 
@@ -199,12 +191,8 @@ const props = withDefaults(defineProps<DialogProps>(), {
   // `open` vs `modelValue` precedence below.
   open: undefined,
   modelValue: undefined,
-  disableOutsideClickToClose: undefined,
-  // `size`/`position` intentionally left undefined so legacy `options.size`
-  // and `options.position` still take effect when the top-level prop is omitted.
-  // Defaults are applied inside `resolved`.
-  size: undefined,
-  position: undefined,
+  size: 'lg',
+  position: 'center',
   dismissible: true,
   showCloseButton: true,
   bare: false,
@@ -212,66 +200,22 @@ const props = withDefaults(defineProps<DialogProps>(), {
 
 const emit = defineEmits<DialogEmits>()
 
-const slots = defineSlots<DialogSlots>()
+defineSlots<DialogSlots>()
 
-// Deprecation warnings for legacy surfaces.
-watchEffect(() => {
-  if (props.options !== undefined) {
-    warnDeprecated('Dialog `options` prop', 'flat top-level props')
-  }
-  if (props.disableOutsideClickToClose !== undefined) {
-    warnDeprecated(
-      'Dialog `disableOutsideClickToClose` prop',
-      '`dismissible` (inverted)',
-    )
-  }
-})
+const portalTarget = usePortalTarget()
 
-const allSlots = useSlots()
-watchEffect(() => {
-  if (allSlots['body-content']) {
-    warnDeprecated('Dialog `#body-content` slot', '`#default`')
-  }
-  if (allSlots['body-main']) {
-    warnDeprecated('Dialog `#body-main` slot', '`#default`')
-  }
-  if (allSlots['body-title']) {
-    warnDeprecated('Dialog `#body-title` slot', '`#title`')
-  }
-  if (allSlots['body-header']) {
-    warnDeprecated(
-      'Dialog `#body-header` slot',
-      '`#title` (no direct replacement)',
-    )
-  }
-  if (allSlots['body']) {
-    warnDeprecated('Dialog `#body` slot', '`#default` + `bare` prop')
-  }
-})
+const slots = useReactiveSlots<DialogSlots>()
 
-// Flatten props: top-level props win over `options` keys.
-const resolved = computed(() => {
-  const o = props.options || ({} as DialogOptions)
-  return {
-    title: props.title ?? o.title,
-    message: props.message ?? o.message,
-    icon: props.icon ?? o.icon,
-    size: props.size ?? o.size ?? 'lg',
-    position: props.position ?? o.position ?? 'center',
-    paddingTop: props.paddingTop ?? o.paddingTop,
-    actions: props.actions ?? o.actions ?? [],
-    showCloseButton: props.showCloseButton,
-    bare: props.bare,
-  }
-})
+const isDismissible = computed(() => props.dismissible !== false)
 
-const isDismissible = computed(() => {
-  if (props.disableOutsideClickToClose) return false
-  return props.dismissible !== false
-})
+// the editor's suggestion menus (@mention, /, #, :) live on <body>; picking from one isn't leaving the dialog
+function isEditorFloating(e: Event) {
+  return (
+    e.target instanceof Element && !!e.target.closest('[data-editor-floating]')
+  )
+}
 
 const sizeClass = computed(() => {
-  const size = resolved.value.size
   const map: Record<string, string> = {
     xs: 'max-w-xs',
     sm: 'max-w-sm',
@@ -285,7 +229,7 @@ const sizeClass = computed(() => {
     '6xl': 'max-w-6xl',
     '7xl': 'max-w-7xl',
   }
-  return map[size] || 'max-w-lg'
+  return map[props.size] || 'max-w-lg'
 })
 
 // Visibility model.
@@ -306,58 +250,56 @@ function close() {
   isOpen.value = false
 }
 
-defineExpose({ close } satisfies DialogExposed)
+// Resolved icon: a `lucide-*` class name, or a component to render.
+const lucideIcon = computed(() =>
+  typeof props.icon === 'string' && isLucideIconString(props.icon)
+    ? props.icon
+    : null,
+)
 
-// Resolved icon — also maps deprecated `appearance` to `theme`.
-const resolvedIcon = computed<DialogIcon | null>(() => {
-  const raw = resolved.value.icon
-  if (!raw) return null
-  if (typeof raw === 'string') return { name: raw }
-  return raw
-})
+const componentIcon = computed(() =>
+  props.icon && typeof props.icon !== 'string' ? props.icon : null,
+)
+
+const hasIcon = computed(() => Boolean(lucideIcon.value || componentIcon.value))
 
 watchEffect(() => {
-  warnFeatherIconUsage('Dialog', 'icon', resolvedIcon.value?.name)
-  if (resolvedIcon.value?.appearance) {
-    warnDeprecated(
-      'Dialog `icon.appearance`',
-      "`icon.theme` ('yellow' | 'blue' | 'red' | 'green')",
-    )
-  }
-  if (props.bare && (props.title || resolvedIcon.value)) {
-    // soft warning — props become no-ops when bare
-    warnDeprecated(
-      'Dialog `title`/`icon` props with `bare: true`',
-      'render the title yourself inside `#default`',
-    )
-  }
-  if (props.bare && (props.actions || props.options?.actions)) {
-    warnDeprecated(
-      'Dialog `actions` prop with `bare: true`',
-      'render actions inside `#default`',
-    )
+  if (typeof props.icon === 'string') {
+    warnUnsupportedIconString('Dialog', 'icon', props.icon)
+  } else if (props.icon) {
+    // The removed `{ name, theme }` object is not a string, so it reaches the
+    // component branch and paints a badge with nothing in it. No shim
+    // (ADR-0008), but the app gets told once.
+    warnUnsupportedIconObject('Dialog', 'icon', props.icon)
   }
 })
 
-const iconTheme = computed<DialogTheme | null>(() => {
-  const icon = resolvedIcon.value
-  if (!icon) return null
-  if (icon.theme) return icon.theme
-  // Back-compat: map `appearance` to `theme`.
-  const map: Record<DialogIconAppearance, DialogTheme> = {
-    warning: 'yellow',
-    info: 'blue',
-    danger: 'red',
-    success: 'green',
-  }
-  return icon.appearance ? map[icon.appearance] : null
-})
+if (import.meta.env.DEV) {
+  let warnedBareTitle = false
+  let warnedBareActions = false
+  watchEffect(() => {
+    if (props.bare && (props.title || props.icon) && !warnedBareTitle) {
+      console.warn(
+        '[frappe-ui] Dialog `title`/`icon` have no effect when `bare` is true. Render them yourself inside `#default`.',
+      )
+      warnedBareTitle = true
+    }
+    if (props.bare && props.actions?.length && !warnedBareActions) {
+      console.warn(
+        '[frappe-ui] Dialog `actions` has no effect when `bare` is true. Render actions inside `#default`.',
+      )
+      warnedBareActions = true
+    }
+  })
+}
+
+const iconTheme = computed<DialogTheme | null>(() => props.theme ?? null)
 
 const dialogIconBgClasses = computed(() => {
   const theme = iconTheme.value
   if (!theme) return 'bg-surface-gray-2'
   const map: Record<DialogTheme, string> = {
-    yellow: 'bg-surface-amber-2',
+    amber: 'bg-surface-amber-2',
     blue: 'bg-surface-blue-2',
     red: 'bg-surface-red-2',
     green: 'bg-surface-green-2',
@@ -369,34 +311,40 @@ const dialogIconClasses = computed(() => {
   const theme = iconTheme.value
   if (!theme) return 'text-ink-gray-5'
   const map: Record<DialogTheme, string> = {
-    yellow: 'text-ink-amber-3',
-    blue: 'text-ink-blue-3',
-    red: 'text-ink-red-4',
-    green: 'text-ink-green-3',
+    amber: 'text-ink-amber-5',
+    blue: 'text-ink-blue-5',
+    red: 'text-ink-red-7',
+    green: 'text-ink-green-5',
   }
   return map[theme]
 })
 
 const dialogPositionClasses = computed(() => {
-  if (resolved.value.paddingTop) return ''
-  const position = resolved.value.position
+  if (props.paddingTop) return ''
   const map: Record<string, string> = {
     center: 'justify-center',
     top: 'pt-[20vh]',
   }
-  return map[position] || 'justify-center'
+  return map[props.position] || 'justify-center'
 })
 
 const dialogPositionStyles = computed(() => {
-  if (resolved.value.paddingTop) {
-    return { paddingTop: resolved.value.paddingTop }
+  // A number is pixels. Vue writes the value straight to the CSSOM, which
+  // drops a unitless length, so `:padding-top="80"` used to remove the
+  // position padding and add nothing back.
+  if (props.paddingTop) {
+    const value =
+      typeof props.paddingTop === 'number'
+        ? `${props.paddingTop}px`
+        : props.paddingTop
+    return { paddingTop: value }
   }
   return {}
 })
 
 const reactiveActions = computed((): DialogReactiveAction[] => {
-  if (resolved.value.bare) return []
-  const list = resolved.value.actions
+  if (props.bare) return []
+  const list = props.actions
   if (!list?.length) return []
   return list.map((action) => {
     const _action = reactive({
@@ -407,17 +355,7 @@ const reactiveActions = computed((): DialogReactiveAction[] => {
         : async () => {
             _action.loading = true
             try {
-              // Back-compat: callable context shim — `context()` still closes.
-              type LegacyContext = (() => void) & DialogActionContext
-              const ctx = (() => {
-                warnDeprecated(
-                  'Dialog action.onClick(callableContext)',
-                  'action.onClick({ close })',
-                )
-                close()
-              }) as LegacyContext
-              ctx.close = close
-              await action.onClick!(ctx)
+              await action.onClick!({ close })
             } finally {
               _action.loading = false
             }
@@ -430,23 +368,18 @@ const reactiveActions = computed((): DialogReactiveAction[] => {
 const isSingleActionFullWidth = computed(() => {
   const smallSizes = ['xs', 'sm', 'md']
   return (
-    reactiveActions.value.length === 1 &&
-    smallSizes.includes(resolved.value.size)
+    reactiveActions.value.length === 1 && smallSizes.includes(props.size)
   )
 })
 
 // Whether the auto-header should render at all. Per spec, the header
 // is title/slot-driven only — the close button lives independently.
 const showHeader = computed(() => {
-  if (resolved.value.bare) return false
-  if (allSlots.title || allSlots['body-title']) return true
-  if (resolved.value.title) return true
+  if (props.bare) return false
+  if (slots.title) return true
+  if (props.title) return true
   return false
 })
-
-function isLucide(name: string | undefined) {
-  return isLucideIconString(name)
-}
 
 // Honor a descendant `[autofocus]` element on open. Reka's FocusScope
 // otherwise focuses the content wrapper (or the first tabbable element),

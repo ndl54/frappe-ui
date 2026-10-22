@@ -1,5 +1,6 @@
-import { toast, Toast, ToastProvider } from '../../index'
-import FrappeUIProvider from '../Provider/FrappeUIProvider.vue'
+import { defineComponent, h } from 'vue'
+import { toast, ToastProvider } from '../../index'
+import FrappeUIProvider from '../FrappeUIProvider/FrappeUIProvider.vue'
 
 describe('Toast v1 — vue-sonner integration', () => {
   // ---- public exports -------------------------------------------------------
@@ -20,14 +21,10 @@ describe('Toast v1 — vue-sonner integration', () => {
     expect(ToastProvider).to.not.be.undefined
   })
 
-  it('Toast back-compat export still resolves', () => {
-    expect(Toast).to.not.be.undefined
-  })
-
-  it('legacy APIs (toast.create / toast.remove / toast.removeAll) are kept as deprecated shims', () => {
-    expect(typeof (toast as any).create).to.equal('function')
-    expect(typeof (toast as any).remove).to.equal('function')
-    expect(typeof (toast as any).removeAll).to.equal('function')
+  it('the legacy shims are gone (create / remove / removeAll)', () => {
+    expect((toast as any).create).to.equal(undefined)
+    expect((toast as any).remove).to.equal(undefined)
+    expect((toast as any).removeAll).to.equal(undefined)
   })
 
   // ---- FrappeUIProvider mounts a Toaster ------------------------------------
@@ -81,5 +78,22 @@ describe('Toast v1 — vue-sonner integration', () => {
       toast.message('Plain message')
     })
     cy.contains('Plain message').should('exist')
+  })
+
+  // ---- toasts fired while the app subtree is still mounting ------------------
+
+  // <Toaster> only receives toasts published after it subscribes, so a toast
+  // fired from a slot child's setup() is dropped unless ToastProvider renders
+  // ahead of the slot. Regression test for frappe/frappe-ui#963.
+  it('keeps a toast fired from slot content during setup', () => {
+    const Child = defineComponent({
+      setup() {
+        toast.success('Toasted from setup')
+        return () => h('div', 'child')
+      },
+    })
+
+    cy.mount(FrappeUIProvider, { slots: { default: () => h(Child) } })
+    cy.contains('Toasted from setup').should('exist')
   })
 })

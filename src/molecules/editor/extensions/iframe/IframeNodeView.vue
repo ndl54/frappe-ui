@@ -1,10 +1,17 @@
 <script setup lang="ts">
-import { computed, ref, toRaw } from 'vue'
+import { computed, ref, toRaw, watch } from 'vue'
 import { NodeViewWrapper, nodeViewProps } from '@tiptap/vue-3'
+import MediaToolbar from '#molecules/editor/components/MediaToolbar.vue'
+import MediaResizeHandle from '#molecules/editor/components/MediaResizeHandle.vue'
+import { SELECTED_MEDIA_RING } from '#molecules/editor/components/media-node-view-utils'
 import { useNodeViewEditable } from '#molecules/editor/composables/useNodeViewEditable'
-import { useNodeViewResize } from '#molecules/editor/composables/useNodeViewResize'
+import {
+  useNodeViewResize,
+  type ResizeEdge,
+} from '#molecules/editor/composables/useNodeViewResize'
 import { safeGetPos } from '#molecules/editor/extensions/shared/node-view'
 import { IFRAME_SANDBOX } from './iframe-allowlist'
+import { openIframeInsertDialog } from './iframeInsertDialogController'
 import type { IframeAlign } from './iframe-commands'
 
 const props = defineProps(nodeViewProps)
@@ -32,7 +39,8 @@ const aspectRatio = computed<number>(
 const frameStyle = computed(() => {
   const width = (props.node.attrs.width as number | null) ?? 640
   const height =
-    (props.node.attrs.height as number | null) ?? Math.round(width * aspectRatio.value)
+    (props.node.attrs.height as number | null) ??
+    Math.round(width * aspectRatio.value)
   return { width: `${width}px`, height: `${height}px` }
 })
 
@@ -51,7 +59,19 @@ const { startResize } = useNodeViewResize(editor, {
   },
   minWidth: MIN_WIDTH,
   maxWidthPadding: EDITOR_PADDING,
+  // The iframe's committed size renders via the frameStyle `:style` binding.
+  mediaSizing: 'style',
 })
+
+const showCaption = ref(Boolean(props.node.attrs.title))
+
+// Re-sync when the title attr changes elsewhere (collab, undo, …).
+watch(
+  () => props.node.attrs.title,
+  (title) => {
+    if (title) showCaption.value = true
+  },
+)
 
 function selectIframe(): void {
   const pos = safeGetPos(() => props.getPos())
@@ -59,13 +79,45 @@ function selectIframe(): void {
   editor.commands.setNodeSelection(pos)
 }
 
-function onResizeStart(event: MouseEvent): void {
+function onResizeStart(event: PointerEvent, edge: ResizeEdge): void {
   selectIframe()
-  startResize(event)
+  startResize(event, edge)
+}
+
+function resizeBy(delta: number): void {
+  selectIframe()
+  const current = (props.node.attrs.width as number | null) ?? 640
+  const width = Math.max(MIN_WIDTH, current + delta)
+  const height = Math.round(width * aspectRatio.value)
+  props.updateAttributes({ width, height, aspectRatio: height / width })
+}
+
+// The arrow keys the handle claims must not reach `handleKeydown` on the
+// wrapper, which reads Up/Down as "move the caret out of the node".
+function onResizeKeydown(event: KeyboardEvent): void {
+  const shrink = event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+  const grow = event.key === 'ArrowRight' || event.key === 'ArrowDown'
+  if (!shrink && !grow) return
+  event.preventDefault()
+  event.stopPropagation()
+  resizeBy(shrink ? -20 : 20)
 }
 
 function setAlignment(align: IframeAlign): void {
   props.updateAttributes({ align })
+}
+
+function toggleCaption(): void {
+  showCaption.value = !showCaption.value
+  if (!showCaption.value) props.updateAttributes({ title: '' })
+}
+
+function changeEmbedLink(): void {
+  openIframeInsertDialog({
+    editor,
+    getReplacePos: () => safeGetPos(() => props.getPos()) ?? undefined,
+    initialUrl: (props.node.attrs.src as string | null) ?? undefined,
+  })
 }
 
 function setCursorAt(pos: number): void {
@@ -111,9 +163,9 @@ function commitCaption(event: Event): void {
   <NodeViewWrapper>
     <div
       ref="containerRef"
-      class="relative my-6 block max-w-full overflow-hidden rounded-lg not-prose focus:outline-none"
+      class="relative isolate my-6 block max-w-full overflow-hidden rounded-4 not-prose focus:outline-none"
       :class="[
-        { 'ring-2 ring-outline-gray-3 ring-offset-2': selected },
+        { [SELECTED_MEDIA_RING]: selected },
         node.attrs.align === 'center' ? 'mx-auto' : '',
         node.attrs.align === 'right' ? 'ml-auto mr-0' : '',
         node.attrs.align === 'left' ? 'mr-auto ml-0' : '',
@@ -129,7 +181,7 @@ function commitCaption(event: Event): void {
         <iframe
           v-if="node.attrs.src"
           ref="iframeRef"
-          class="block h-auto max-w-full rounded-lg border-0"
+          class="block h-auto max-w-full rounded-4 border-0"
           :class="{ 'pointer-events-none': overlayActive }"
           :src="node.attrs.src"
           :style="frameStyle"
@@ -149,52 +201,30 @@ function commitCaption(event: Event): void {
           @click.stop="selectIframe"
         ></div>
 
-        <!-- Controls overlay -->
-        <div class="absolute bottom-2 right-2 z-20 flex items-center gap-2">
-          <div
-            v-if="selected && isEditable"
-            class="flex divide-x divide-ink-gray-6 rounded-md bg-black/65"
-          >
-            <button
-              class="px-1.5 py-1 text-ink-gray-4 transition-colors duration-150 hover:text-white"
-              :class="{ 'text-white': node.attrs.align === 'left' }"
-              title="Align Left"
-              @click.stop="setAlignment('left')"
-            >
-              <span class="lucide-align-left size-4" />
-            </button>
-            <button
-              class="px-1.5 py-1 text-ink-gray-4 transition-colors duration-150 hover:text-white"
-              :class="{ 'text-white': node.attrs.align === 'center' }"
-              title="Align Center"
-              @click.stop="setAlignment('center')"
-            >
-              <span class="lucide-align-center size-4" />
-            </button>
-            <button
-              class="px-1.5 py-1 text-ink-gray-4 transition-colors duration-150 hover:text-white"
-              :class="{ 'text-white': node.attrs.align === 'right' }"
-              title="Align Right"
-              @click.stop="setAlignment('right')"
-            >
-              <span class="lucide-align-right size-4" />
-            </button>
-          </div>
+        <!-- Shared media toolbar (caption / change link / align) -->
+        <MediaToolbar
+          v-if="node.attrs.src"
+          :node="node"
+          media-type="embed"
+          :is-editable="isEditable"
+          :selected="selected"
+          :show-caption="showCaption"
+          @toggle-caption="toggleCaption"
+          @set-align="setAlignment"
+          @replace="changeEmbedLink"
+        />
 
-          <button
-            v-if="selected && isEditable"
-            class="cursor-nw-resize rounded-md bg-black/65 p-1"
-            title="Resize"
-            @mousedown.prevent="onResizeStart"
-          >
-            <span class="lucide-move-diagonal-2 size-4 text-white" />
-          </button>
-        </div>
+        <MediaResizeHandle
+          v-if="selected && isEditable"
+          label="Resize embed"
+          @resize-start="onResizeStart"
+          @resize-keydown="onResizeKeydown"
+        />
 
         <!-- Placeholder while no src is set -->
         <div
           v-if="!node.attrs.src"
-          class="flex h-[360px] w-[640px] items-center justify-center rounded-lg bg-surface-gray-1"
+          class="flex h-[360px] w-[640px] items-center justify-center rounded-4 bg-surface-gray-1"
         >
           <div class="text-center text-ink-gray-5">
             <div class="mb-1 text-lg">🔗</div>
@@ -205,7 +235,7 @@ function commitCaption(event: Event): void {
 
       <!-- Caption input (commits on blur / Enter) -->
       <input
-        v-if="(isEditable || node.attrs.title) && node.attrs.src"
+        v-if="(node.attrs.title || showCaption) && node.attrs.src"
         :value="node.attrs.title"
         class="mt-2 h-7 w-full border-0 bg-transparent text-center text-sm text-ink-gray-6 placeholder-ink-gray-4 focus:outline-none focus:ring-0 disabled:opacity-60"
         placeholder="Add caption"

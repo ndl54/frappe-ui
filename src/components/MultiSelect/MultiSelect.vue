@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, useAttrs, useSlots, watch } from 'vue'
+import { computed, ref, useAttrs, useTemplateRef, watch } from 'vue'
 import {
   ComboboxAnchor,
   ComboboxContent,
@@ -9,12 +9,15 @@ import {
   FocusScope,
 } from 'reka-ui'
 import Button from '../Button/Button.vue'
-import LoadingIndicator from '../LoadingIndicator.vue'
+import { Spinner } from '../Spinner'
 import MultiSelectResults from './MultiSelectResults.vue'
-import { usePopoverMotion } from '../../composables/usePopoverMotion'
 import { useInputLabeling } from '../../composables/useInputLabeling'
+import { useReactiveSlots } from '../../composables/useReactiveSlots'
+import { usePortalTarget } from '../../composables/usePortalTarget'
 import { useEmptyValueMapping } from '../shared/selection/useEmptyValueMapping'
 import { useFilteredGroups } from '../shared/selection/useFilteredGroups'
+import { rankMatch } from '../../utils/rankMatch'
+import { useIsModelBound } from '../shared/selection/useIsModelBound'
 import OptionIcon from '../shared/selection/OptionIcon.vue'
 import {
   InputDescription,
@@ -23,14 +26,19 @@ import {
   LabelingWrapper,
 } from '../InputLabeling'
 import '../shared/selection/popoverMotion.css'
+import type { SelectionExposed } from '../shared/selection/types'
 import type {
   MultiSelectEmits,
+  MultiSelectOption,
   MultiSelectProps,
+  MultiSelectSearchSlotProps,
+  MultiSelectSlotProps,
   MultiSelectSlots,
 } from './types'
 import {
   EMPTY_VALUE_PREFIX,
   inputFontSizeClasses,
+  isGroupedOption,
   matchesOption,
   normalizeMultiSelectOptions,
   triggerBaseClasses,
@@ -51,22 +59,40 @@ const props = withDefaults(defineProps<MultiSelectProps>(), {
   disabled: false,
   hideSearch: false,
   loading: false,
+  filterable: true,
   emptyText: 'No results',
   side: 'bottom',
   align: 'start',
   offset: 4,
-  portalTo: 'body',
 })
+
+const portalTarget = usePortalTarget(() => props.portalTo)
 
 const emit = defineEmits<MultiSelectEmits>()
 const attrs = useAttrs()
-const slots = useSlots()
+const slots = useReactiveSlots<MultiSelectSlots>()
 
-const model = defineModel<string[]>({ default: () => [] })
+// `MultiSelectResults` dispatches on dynamic names (`item-${slot}`), which the
+// enumerated `MultiSelectSlots` cannot express. Same object, so reads still go
+// through the proxy.
+const slotFns = slots as Record<string, ((props?: any) => any) | undefined>
+
+const model = defineModel<Array<string | number>>({ default: () => [] })
+// Documented on `open` in `./types.ts`. A JSDoc block here would be appended
+// to that description by `propsgen`, not replace it.
 const open = defineModel<boolean>('open', { default: false })
+// Optional outside-in control of the search box. Unbound, `defineModel` keeps
+// the value local, so `v-model:query` is never required. Documented on `query`
+// in `./types.ts`.
+const query = defineModel<string>('query', { default: '' })
+// Bound, the query is the consumer's — the component never resets it (see the
+// open watcher at the bottom of this block).
+const isQueryBound = useIsModelBound('query')
 
-const query = ref('')
 const hasTypedSinceOpen = ref(false)
+
+const searchInputRef = useTemplateRef('searchInput')
+const triggerRef = useTemplateRef<HTMLButtonElement>('trigger')
 
 const {
   inputId,
@@ -81,20 +107,19 @@ const {
   size: () => props.size,
   variant: () => props.variant,
   disabled: () => props.disabled,
+  hasLabelSlot: () => Boolean(slots.label),
+  hasDescriptionSlot: () => Boolean(slots.description),
 })
 
 const hasLabeling = computed(() => {
   return Boolean(
     props.label ||
-      props.description ||
-      hasError.value ||
-      slots.label ||
-      slots.description,
+    props.description ||
+    hasError.value ||
+    slots.label ||
+    slots.description,
   )
 })
-
-const { motion: contentMotion, onPointerDown: markPointerDown } =
-  usePopoverMotion(open)
 
 const normalizedGroups = computed(() =>
   normalizeMultiSelectOptions(props.options),
@@ -104,38 +129,37 @@ const allOptions = computed<NormalizedOption[]>(() =>
   normalizedGroups.value.flatMap((group) => group.options),
 )
 
+// The consumer's own option objects, untouched by normalization. Handed back
+// through `update:selectedOptions` so custom fields survive identity-intact —
+// the family rule is that anything returning an option returns the original.
+const rawOptions = computed<MultiSelectOption[]>(() =>
+  (props.options ?? []).flatMap((entry) => {
+    if (!entry) return []
+    return isGroupedOption(entry) ? entry.options : [entry]
+  }),
+)
+
 const { toInternal: getInternalValue, toExternal: toExternalValue } =
   useEmptyValueMapping(allOptions, EMPTY_VALUE_PREFIX)
 
-const safeModel = computed<string[]>(() =>
+const safeModel = computed<Array<string | number>>(() =>
   Array.isArray(model.value) ? model.value : [],
 )
 
-const internalModel = computed<string[]>(() =>
+const internalModel = computed<Array<string | number>>(() =>
   safeModel.value.map((value) => {
     const option = allOptions.value.find((item) => item.value === value)
     return option ? getInternalValue(option) : value
   }),
 )
 
-function findOptionByValue(value: string): NormalizedOption | null {
-  if (props.compareFn) {
-    const probe = { label: value, value } as NormalizedOption
-    return (
-      allOptions.value.find((option) => props.compareFn!(option, probe)) ?? null
-    )
-  }
-  return allOptions.value.find((option) => option.value === value) ?? null
-}
-
 const selectedOptions = computed(() =>
   safeModel.value
-    .map((value) => findOptionByValue(value))
+    .map(
+      (value) =>
+        allOptions.value.find((option) => option.value === value) ?? null,
+    )
     .filter((option): option is NormalizedOption => Boolean(option)),
-)
-
-const displayValue = computed(() =>
-  selectedOptions.value.map((option) => option.label).join(', '),
 )
 
 // The compact label shown in the default button trigger. For exactly
@@ -172,6 +196,8 @@ const filteredGroups = useFilteredGroups({
   hasTypedSinceOpen,
   query,
   matches: matchesOption,
+  rank: (item, q) => rankMatch(item.label, q),
+  filterable: () => props.filterable ?? true,
 })
 
 const hasVisibleItems = computed(() =>
@@ -187,25 +213,94 @@ const allSelected = computed(() => {
   return selectable.every((option) => selected.has(option.value))
 })
 
-function clearAll() {
-  model.value = []
+// Single write path for the selection so `update:selectedOptions` cannot
+// drift from `update:modelValue`.
+function setModel(values: Array<string | number>) {
+  model.value = values
+  emit(
+    'update:selectedOptions',
+    values
+      .map(
+        (value) =>
+          rawOptions.value.find((option) => option.value === value) ?? null,
+      )
+      .filter((option): option is MultiSelectOption => Boolean(option)),
+  )
+}
+
+function clear() {
+  setModel([])
 }
 
 function selectAll() {
-  model.value = allOptions.value
-    .filter((option) => !option.disabled)
-    .map((option) => option.value)
+  setModel(
+    allOptions.value
+      .filter((option) => !option.disabled)
+      .map((option) => option.value),
+  )
 }
 
-function toggleOpen() {
+function handleTriggerClick() {
+  setOpen(!open.value)
+}
+
+function setOpen(value: boolean) {
+  if (props.disabled && value) return
+  open.value = value
+}
+
+function close() {
+  setOpen(false)
+}
+
+function setQuery(value: string) {
   if (props.disabled) return
-  open.value = !open.value
+  query.value = value
 }
 
-function handleRootModelValueChange(value: string | string[] | undefined) {
-  const arr = Array.isArray(value) ? value : value ? [value] : []
-  const mapped = arr.map(toExternalValue)
-  model.value = mapped
+function focusSearch(options?: FocusOptions) {
+  // `ComboboxInput` renders a single `<input>` root, so the instance's `$el`
+  // is that element. Resolved through the template ref rather than
+  // `getElementById` so the internal id template stays internal.
+  const instance = searchInputRef.value as {
+    $el?: HTMLInputElement
+  } | null
+  const el = (instance?.$el ?? instance) as HTMLInputElement | null
+  el?.focus(options)
+}
+
+/** Focuses the default trigger, falling back to the popover search input. */
+function focus(options?: FocusOptions) {
+  const target = triggerRef.value
+  if (target) {
+    target.focus(options)
+    return
+  }
+  focusSearch(options)
+}
+
+const slotProps = computed<MultiSelectSlotProps>(() => ({
+  open: open.value,
+  disabled: Boolean(props.disabled),
+  query: typedQuery.value,
+  selectedOptions: selectedOptions.value,
+  clear,
+  setOpen,
+  close,
+}))
+
+const searchSlotProps = computed<MultiSelectSearchSlotProps>(() => ({
+  query: typedQuery.value,
+  setQuery,
+  disabled: Boolean(props.disabled),
+  focus: focusSearch,
+}))
+
+function handleRootModelValueChange(value: unknown) {
+  const values = Array.isArray(value) ? value : value == null ? [] : [value]
+  setModel(
+    values.map((item) => toExternalValue(item)) as Array<string | number>,
+  )
 }
 
 function handleRootOpenChange(value: boolean) {
@@ -213,12 +308,7 @@ function handleRootOpenChange(value: boolean) {
 }
 
 function handleInputChange(event: Event) {
-  const target = event.target as HTMLInputElement
-  const value = target.value
-
-  query.value = value
-  hasTypedSinceOpen.value = true
-  emit('update:query', value)
+  setQuery((event.target as HTMLInputElement).value)
 }
 
 const triggerClasses = computed(() => [
@@ -228,12 +318,40 @@ const triggerClasses = computed(() => [
   triggerVariantClasses(props.variant, Boolean(props.disabled)),
 ])
 
+// Query filtering is gated on the user having typed since the popover opened.
+// Deriving that from the query itself (rather than setting it at each write
+// site) keeps it correct for every path into the query: typing, the slot's
+// `setQuery`, a bound `v-model:query`, and the reset below. In particular,
+// clearing must restore "hasn't typed", not assert the opposite.
+watch(
+  query,
+  (value) => {
+    hasTypedSinceOpen.value = value !== ''
+  },
+  { immediate: true },
+)
+
 watch(open, (isOpen, wasOpen) => {
   if (isOpen === wasOpen) return
-  query.value = ''
+
+  // A bound `query` belongs to the consumer: resetting it here would emit
+  // `update:query('')` and wipe whatever they seeded. Leave it alone and treat
+  // a surviving query as an active filter, otherwise the search box would read
+  // "ba" over an unfiltered list.
+  if (isQueryBound()) {
+    hasTypedSinceOpen.value = query.value !== ''
+    return
+  }
+
+  if (query.value !== '') query.value = ''
   hasTypedSinceOpen.value = false
 })
 
+defineExpose<SelectionExposed>({
+  clear,
+  /** Moves focus to the trigger. */
+  focus,
+})
 defineSlots<MultiSelectSlots>()
 </script>
 
@@ -249,75 +367,59 @@ defineSlots<MultiSelectSlots>()
       :for-id="inputId"
       :label="label"
       :required="required"
-      class="text-p-sm font-medium text-ink-gray-7"
     >
       <template v-if="$slots.label" #default="slotProps">
         <slot name="label" v-bind="slotProps" />
       </template>
     </InputLabel>
-  <ComboboxRoot
-    multiple
-    :model-value="internalModel"
-    :open="open"
-    :disabled="disabled"
-    :ignore-filter="true"
-    @update:modelValue="handleRootModelValueChange"
-    @update:open="handleRootOpenChange"
-  >
-    <ComboboxAnchor
-      as-child
-      @click="toggleOpen"
-      @pointerdown="markPointerDown"
+    <ComboboxRoot
+      multiple
+      :model-value="internalModel"
+      :open="open"
+      :disabled="disabled"
+      :ignore-filter="true"
+      @update:modelValue="handleRootModelValueChange"
+      @update:open="handleRootOpenChange"
     >
-      <slot
-        v-if="$slots.trigger"
-        name="trigger"
-        v-bind="{
-          open,
-          disabled: !!disabled,
-          query: typedQuery,
-          selectedOptions,
-          displayValue,
-          clearAll,
-          toggleOpen,
-        }"
-      />
+      <ComboboxAnchor as-child @click="handleTriggerClick">
+        <slot v-if="$slots.trigger" name="trigger" v-bind="slotProps" />
 
-      <!--
+        <!--
         Rendered as a raw `<button>` so prefix / label / chevron are
         direct flex children and `justify-between` + label `flex-1` align
         cleanly. Wrapping in `<Button>` would nest the label inside
         Button's own default-slot `<span>`, which is content-sized and
         would center the label when a width class is applied.
       -->
-      <button
-        v-else
-        type="button"
-        :class="[
-          triggerClasses,
-          'justify-between',
-          disabled && 'cursor-not-allowed',
-          hasLabeling ? 'w-full' : null,
-          hasLabeling ? null : (attrs.class as any),
-        ]"
-        :style="hasLabeling ? null : (attrs.style as any)"
-        :disabled="disabled"
-        data-slot="trigger"
-        :data-state="open ? 'open' : 'closed'"
-        :data-variant="variant"
-        :data-size="size"
-        :data-disabled="disabled ? '' : undefined"
-        :data-invalid="hasError ? 'true' : undefined"
-        :data-required="required ? 'true' : undefined"
-        :id="inputId"
-        aria-haspopup="listbox"
-        :aria-expanded="open"
-        :aria-invalid="hasError || undefined"
-        :aria-errormessage="hasError ? errorMessageId : undefined"
-        :aria-describedby="describedBy"
-        :aria-required="required || undefined"
-      >
-        <!--
+        <button
+          v-else
+          ref="trigger"
+          type="button"
+          :class="[
+            triggerClasses,
+            'justify-between',
+            disabled && 'cursor-not-allowed',
+            hasLabeling ? 'w-full' : null,
+            hasLabeling ? null : (attrs.class as any),
+          ]"
+          :style="hasLabeling ? null : (attrs.style as any)"
+          :disabled="disabled"
+          data-slot="trigger"
+          :data-state="open ? 'open' : 'closed'"
+          :data-variant="variant"
+          :data-size="size"
+          :data-disabled="disabled ? '' : undefined"
+          :data-invalid="hasError ? 'true' : undefined"
+          :data-required="required ? 'true' : undefined"
+          :id="inputId"
+          aria-haspopup="listbox"
+          :aria-expanded="open"
+          :aria-invalid="hasError || undefined"
+          :aria-errormessage="hasError ? errorMessageId : undefined"
+          :aria-describedby="describedBy"
+          :aria-required="required || undefined"
+        >
+          <!--
           Prefix precedence on the trigger:
             1. `#prefix` slot, when provided, owns the entire prefix area
                regardless of selection count. Use it for aggregate
@@ -329,101 +431,72 @@ defineSlots<MultiSelectSlots>()
                the icon.
             4. otherwise: nothing.
         -->
-        <slot
-          v-if="$slots.prefix"
-          name="prefix"
-          v-bind="{
-            open,
-            disabled: !!disabled,
-            query: typedQuery,
-            selectedOptions,
-            displayValue,
-            clearAll,
-            toggleOpen,
-          }"
-        />
-        <template
-          v-else-if="singleSelectedOption && $slots['item-prefix']"
-        >
-          <slot
-            name="item-prefix"
-            v-bind="{
-              item: singleSelectedOption,
-              query: '',
-              selected: true,
-            }"
-          />
-        </template>
-        <OptionIcon
-          v-else-if="singleSelectedOption?.icon"
-          :icon="singleSelectedOption.icon"
-        />
-
-        <span class="grid min-w-0 flex-1 text-left font-normal">
-          <span
-            :class="[
-              'col-start-1 row-start-1 max-w-full truncate',
-              !selectedOptions.length && 'text-ink-gray-4',
-            ]"
-          >
+          <slot v-if="$slots.prefix" name="prefix" v-bind="slotProps" />
+          <template v-else-if="singleSelectedOption && $slots['item-prefix']">
             <slot
-              name="summary"
+              name="item-prefix"
               v-bind="{
-                open,
-                disabled: !!disabled,
-                query: typedQuery,
-                selectedOptions,
-                displayValue,
-                clearAll,
-                toggleOpen,
-                summary: triggerSummary,
+                item: singleSelectedOption,
+                query: '',
+                selected: true,
               }"
-            >{{ triggerSummary }}</slot>
+            />
+          </template>
+          <OptionIcon
+            v-else-if="singleSelectedOption?.icon"
+            :icon="singleSelectedOption.icon"
+          />
+
+          <span class="grid min-w-0 flex-1 text-left font-normal">
+            <span
+              :class="[
+                'col-start-1 row-start-1 max-w-full truncate',
+                !selectedOptions.length && 'text-ink-gray-4',
+              ]"
+            >
+              <slot
+                name="summary"
+                v-bind="{
+                  ...slotProps,
+                  summary: triggerSummary,
+                }"
+                >{{ triggerSummary }}</slot
+              >
+            </span>
+            <span
+              v-if="!$slots.summary"
+              aria-hidden="true"
+              class="multi-select-trigger-sizer col-start-1 row-start-1"
+              :data-width-text="triggerSizingText"
+            />
           </span>
-          <span
-            v-if="!$slots.summary"
-            aria-hidden="true"
-            class="multi-select-trigger-sizer col-start-1 row-start-1"
-            :data-width-text="triggerSizingText"
-          />
-        </span>
 
-        <slot
-          name="suffix"
-          v-bind="{
-            open,
-            disabled: !!disabled,
-            query: typedQuery,
-            selectedOptions,
-            displayValue,
-            clearAll,
-            toggleOpen,
-          }"
+          <slot name="suffix" v-bind="slotProps">
+            <span
+              data-slot="chevron"
+              :class="[
+                'lucide-chevron-down size-4 shrink-0 text-ink-gray-4 transition-transform duration-200 ease-[cubic-bezier(0.23,1,0.32,1)]',
+                open && 'rotate-180',
+              ]"
+            />
+          </slot>
+        </button>
+      </ComboboxAnchor>
+
+      <ComboboxPortal :to="portalTarget">
+        <ComboboxContent
+          data-slot="content"
+          data-selection
+          :data-variant="variant"
+          :data-size="size"
+          :data-loading="loading ? '' : undefined"
+          class="z-[100] min-w-[--reka-combobox-trigger-width]"
+          position="popper"
+          :side="side"
+          :align="align"
+          :side-offset="offset"
         >
-          <span
-            :class="[
-              'lucide-chevron-down size-4 shrink-0 text-ink-gray-4 transition-transform duration-200 ease-[cubic-bezier(0.23,1,0.32,1)]',
-              open && 'rotate-180',
-            ]"
-          />
-        </slot>
-      </button>
-    </ComboboxAnchor>
-
-    <ComboboxPortal :to="portalTo">
-      <ComboboxContent
-        data-slot="content"
-        data-selection
-        :data-variant="variant"
-        :data-size="size"
-        :data-loading="loading ? '' : undefined"
-        class="z-[100] min-w-[--reka-combobox-trigger-width]"
-        position="popper"
-        :side="side"
-        :align="align"
-        :side-offset="offset"
-      >
-        <!--
+          <!--
           FocusScope sits on the always-present content-body div (inside
           ComboboxContent, which is a <Presence> wrapper that renders null
           while closed). Mounting it here pushes a new entry onto reka's
@@ -432,86 +505,96 @@ defineSlots<MultiSelectSlots>()
           popover (e.g. the search input). See Combobox.vue for the same
           fix and a longer rationale.
         -->
-        <FocusScope as-child @unmount-auto-focus.prevent>
-          <div
-            data-slot="content-body"
-            :data-motion="contentMotion"
-            class="overflow-hidden rounded-lg bg-surface-modal shadow-2xl ring-1 ring-black ring-opacity-5"
-          >
+          <FocusScope as-child @unmount-auto-focus.prevent>
             <div
-              v-if="!hideSearch"
-              data-slot="search"
-              class="flex items-center gap-2 border-b border-outline-gray-1 px-3"
+              data-slot="content-body"
+              data-motion="instant"
+              class="overflow-hidden rounded-6 bg-surface-elevation-2 shadow-2xl ring-1 ring-black ring-opacity-5"
             >
-              <ComboboxInput
-                data-slot="input"
-                :value="query"
-                :disabled="disabled"
-                :placeholder="placeholder"
-                autocomplete="off"
-                class="min-w-0 flex-1 border-0 bg-transparent px-0 py-2 text-base text-ink-gray-8 outline-none placeholder:text-ink-gray-4 focus:ring-0"
-                @input="handleInputChange"
-              />
-              <LoadingIndicator
-                v-if="loading"
-                class="size-4 shrink-0 text-ink-gray-5"
-              />
-            </div>
-
-            <MultiSelectResults
-              :groups="filteredGroups"
-              :size="size"
-              :query="typedQuery"
-              :selected-values="safeModel"
-              :loading="loading"
-              :hide-search="hideSearch"
-              :empty-text="emptyText"
-              :show-empty="showEmpty"
-              :slot-fns="slots"
-              :all-options="allOptions"
-            />
-
-            <template v-if="$slots.footer">
-              <div data-slot="footer">
+              <div
+                v-if="!hideSearch"
+                data-slot="search"
+                class="flex items-center gap-2 border-b border-outline-gray-1 px-3"
+              >
                 <slot
-                  name="footer"
-                  v-bind="{
-                    clearAll,
-                    selectAll,
-                    selectedOptions,
-                    query: typedQuery,
-                  }"
+                  v-if="$slots['search-prefix']"
+                  name="search-prefix"
+                  v-bind="searchSlotProps"
+                />
+                <ComboboxInput
+                  ref="searchInput"
+                  :id="`${inputId}-search-input`"
+                  data-slot="input"
+                  :value="query"
+                  :disabled="disabled"
+                  :placeholder="placeholder"
+                  autocomplete="off"
+                  class="min-w-0 flex-1 border-0 bg-transparent px-0 py-2 text-base text-ink-gray-8 outline-none placeholder:text-ink-gray-4 focus:ring-0"
+                  @input="handleInputChange"
+                />
+                <Spinner
+                  v-if="loading"
+                  class="size-4 shrink-0 text-ink-gray-5"
+                />
+                <slot
+                  v-if="$slots['search-suffix']"
+                  name="search-suffix"
+                  v-bind="searchSlotProps"
                 />
               </div>
-            </template>
-            <div
-              v-else
-              data-slot="footer"
-              class="flex items-center justify-between gap-2 border-t border-outline-gray-1 px-2 py-1.5"
-            >
-              <Button
-                v-if="safeModel.length > 0"
-                variant="ghost"
-                size="sm"
-                @click="clearAll"
+
+              <MultiSelectResults
+                :groups="filteredGroups"
+                :size="size"
+                :query="typedQuery"
+                :selected-values="safeModel"
+                :loading="loading"
+                :hide-search="hideSearch"
+                :empty-text="emptyText"
+                :show-empty="showEmpty"
+                :slot-fns="slotFns"
+                :all-options="allOptions"
+              />
+
+              <template v-if="$slots.footer">
+                <div data-slot="footer">
+                  <slot
+                    name="footer"
+                    v-bind="{
+                      ...slotProps,
+                      selectAll,
+                    }"
+                  />
+                </div>
+              </template>
+              <div
+                v-else
+                data-slot="footer"
+                class="flex items-center justify-between gap-2 border-t border-outline-gray-1 px-2 py-1.5"
               >
-                Clear All
-              </Button>
-              <Button
-                v-if="!allSelected"
-                variant="ghost"
-                size="sm"
-                class="ml-auto"
-                @click="selectAll"
-              >
-                Select All
-              </Button>
+                <Button
+                  v-if="safeModel.length > 0"
+                  variant="ghost"
+                  size="sm"
+                  @click="clear"
+                >
+                  Clear All
+                </Button>
+                <Button
+                  v-if="!allSelected"
+                  variant="ghost"
+                  size="sm"
+                  class="ml-auto"
+                  @click="selectAll"
+                >
+                  Select All
+                </Button>
+              </div>
             </div>
-          </div>
-        </FocusScope>
-      </ComboboxContent>
-    </ComboboxPortal>
-  </ComboboxRoot>
+          </FocusScope>
+        </ComboboxContent>
+      </ComboboxPortal>
+    </ComboboxRoot>
     <InputDescription
       v-if="showDescription || $slots.description"
       :id="descriptionId"
@@ -536,11 +619,5 @@ defineSlots<MultiSelectSlots>()
   overflow: hidden;
   white-space: pre;
   visibility: hidden;
-}
-
-/* Component-specific transform-origin; the rest of the motion lives in
-   shared/selection/popoverMotion.css. */
-[data-slot='content-body'][data-motion='animated'] {
-  transform-origin: var(--reka-combobox-content-transform-origin);
 }
 </style>

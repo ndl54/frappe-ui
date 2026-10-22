@@ -1,10 +1,17 @@
-import { type ObjectDirective, type DirectiveBinding, nextTick } from "vue"
+import { type ObjectDirective, type DirectiveBinding, nextTick } from 'vue'
 
 interface FocusDirective extends ObjectDirective<HTMLElement> {
   mounted(el: HTMLElement, binding: DirectiveBinding<boolean>): void
 }
 
-const focusDirective: FocusDirective = {
+/**
+ * Focuses the first focusable descendant on mount. `v-focus:autoselect` also
+ * selects the text of an input or textarea.
+ *
+ * Named `vFocus` because `<script setup>` auto-registers only `vFoo`-shaped
+ * bindings — anything else has to be aliased by hand at every call site.
+ */
+export const vFocus: FocusDirective = {
   async mounted(el, binding) {
     if (binding.value === false) {
       return
@@ -14,7 +21,7 @@ const focusDirective: FocusDirective = {
       await nextTick()
       firstFocusableElement.focus()
       if (
-        binding.arg === "autoselect" &&
+        binding.arg === 'autoselect' &&
         (firstFocusableElement instanceof HTMLInputElement ||
           firstFocusableElement instanceof HTMLTextAreaElement)
       ) {
@@ -22,7 +29,7 @@ const focusDirective: FocusDirective = {
       }
     } else {
       await nextTick()
-      document.activeElement?.blur?.()
+      ;(document.activeElement as HTMLElement | null)?.blur()
     }
   },
 }
@@ -42,5 +49,3 @@ function getFirstFocusableElement(parent: HTMLElement): HTMLElement | null {
     parent.querySelectorAll<HTMLElement>(focusableSelector)
   return focusableElements.length > 0 ? focusableElements[0] : null
 }
-
-export default focusDirective

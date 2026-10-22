@@ -1,76 +1,61 @@
 <template>
-  <div
-    class="flex h-full flex-col flex-shrink-0 overflow-y-auto overflow-x-hidden border-r border-outline-gray-1 bg-surface-menu-bar transition-all duration-300 ease-in-out p-2"
-    :class="shouldCollapse ? 'w-12' : 'w-60'"
+  <!-- A <nav> landmark, so screen-reader users can jump to the app's
+       navigation. It is the only one the sidebar family emits: SidebarSection
+       bodies are `role="group"`, because nested landmarks add noise instead of
+       structure. Keep app-written wrappers inside the slot as plain divs. -->
+  <nav
+    data-slot="sidebar"
+    :data-state="shouldCollapse ? 'collapsed' : 'expanded'"
+    :aria-label="ariaLabel"
+    class="flex h-full flex-shrink-0 flex-col overflow-x-hidden bg-surface-sidebar transition-[width] duration-300 ease-in-out"
+    :style="{ width: shouldCollapse ? collapsedWidth : width }"
   >
-    <slot name="header" v-bind="{ isCollapsed: shouldCollapse, isMobile }">
-      <SidebarHeader
-        v-if="props.header"
-        :isCollapsed="shouldCollapse"
-        :title="props.header.title"
-        :subtitle="props.header.subtitle"
-        :logo="props.header.logo"
-        :menu-items="props.header.menuItems"
-      >
-        <template #logo>
-          <slot name="header-logo"></slot>
-        </template>
-      </SidebarHeader>
-    </slot>
-
-    <SidebarSection
-      v-for="section in props.sections"
-      :key="section.label"
-      :label="section.label"
-      :items="section.items"
-      :collapsible="section.collapsible"
-    >
-      <template #sidebar-item="{ item, isCollapsed }">
-        <slot name="sidebar-item" :item :isCollapsed></slot>
-      </template>
-    </SidebarSection>
-
-    <div class="mt-auto flex flex-col gap-2">
-      <slot
-        name="footer-items"
-        v-bind="{ isCollapsed: shouldCollapse, isMobile }"
-      />
-      <SidebarItem
-        v-if="!props.disableCollapse"
-        :label="shouldCollapse ? 'Expand' : 'Collapse'"
-        @click="isCollapsed = !isCollapsed"
-      >
-        <template #icon>
-          <span
-            class="lucide-panel-right-open size-4 text-ink-gray-6 duration-300 ease-in-out"
-            :class="{ 'rotate-180': shouldCollapse }"
-          />
-        </template>
-      </SidebarItem>
-    </div>
-  </div>
+    <!-- The app owns the entire body: header, scroll region, footer. Compose
+         it from SidebarHeader / SidebarSection / SidebarLabel / SidebarItem
+         and plain markup. -->
+    <slot />
+  </nav>
 </template>
 
 <script setup lang="ts">
 import { breakpointsTailwind, useBreakpoints } from '@vueuse/core'
-import { provide, computed } from 'vue'
-import SidebarHeader from './SidebarHeader.vue'
-import SidebarItem from './SidebarItem.vue'
-import { SidebarProps, sidebarCollapsedKey } from './types'
+import { computed, provide } from 'vue'
+import { SidebarProps, sidebarCollapsedKey, sidebarToggleKey } from './types'
 
-import SidebarSection from './SidebarSection.vue'
-
-const props = defineProps<SidebarProps>()
-
-const isCollapsed = defineModel('collapsed', {
-  type: Boolean,
-  default: null,
+const props = withDefaults(defineProps<SidebarProps>(), {
+  collapsible: true,
+  width: '15rem',
+  collapsedWidth: '3rem',
+  ariaLabel: 'Main',
 })
-const shouldCollapse = computed(
-  () => (isCollapsed.value ?? isMobile.value) && !props.disableCollapse,
-)
-provide(sidebarCollapsedKey, shouldCollapse)
+
+defineSlots<{
+  /** The sidebar body — header, scroll region, footer, all composed by the app. */
+  default?: () => any
+}>()
+
+// `defineModel` already declares this event, but it carries no place to write
+// the event's own description. Redeclaring it here is what puts the sentence
+// in the generated API table.
+defineEmits<{
+  /** Fired when the sidebar is collapsed or expanded. */
+  'update:collapsed': [value: boolean | null]
+}>()
+
+/** v-model. Whether the sidebar is collapsed. Left unset, it collapses automatically below the `sm` breakpoint. */
+const isCollapsed = defineModel<boolean | null>('collapsed', { default: null })
 
 const breakpoints = useBreakpoints(breakpointsTailwind)
 const isMobile = breakpoints.smaller('sm')
+
+const shouldCollapse = computed(
+  () => props.collapsible && (isCollapsed.value ?? isMobile.value),
+)
+
+function toggle() {
+  isCollapsed.value = !shouldCollapse.value
+}
+
+provide(sidebarCollapsedKey, shouldCollapse)
+provide(sidebarToggleKey, toggle)
 </script>

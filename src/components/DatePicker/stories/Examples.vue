@@ -41,7 +41,7 @@ const stardateCeil = dayjs('2300-12-31').format('YYYY-MM-DD')
 const dueDate = ref('')
 
 const rowCls =
-  'w-full rounded px-2 py-1.5 text-left text-base hover:bg-surface-gray-2'
+  'w-full rounded-4 px-2 py-1.5 text-left text-base hover:bg-surface-gray-2'
 </script>
 
 <template>
@@ -135,10 +135,10 @@ const rowCls =
     <div class="flex flex-col gap-1.5">
       <span class="text-sm text-ink-gray-7">Task card affordance</span>
       <DatePicker v-model="dueDate" format="MMM D">
-        <template #trigger="{ togglePopover, displayLabel }">
+        <template #trigger="{ setOpen, displayLabel, open }">
           <Button
             :variant="dueDate ? 'subtle' : 'ghost'"
-            @click="togglePopover"
+            @click="setOpen(!open)"
           >
             <template #prefix>
               <span class="lucide-calendar-plus size-4" />

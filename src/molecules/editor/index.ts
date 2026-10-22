@@ -6,14 +6,14 @@ import './style.css'
 // Engine
 export {
   useEditor,
-  type Editor,
+  type Editor as TiptapEditor,
   type JSONContent,
-  type UploadedFile,
+  type UploadedMedia,
+  type UploadFunction,
+  type MediaUploadProgress,
 } from './useEditor'
 
-// The component. NOTE: this is the `Editor` *value*; the `Editor` *type* above
-// (the tiptap instance) lives in a separate namespace, so `import { Editor }`
-// gets the component and `import type { Editor }` gets the type.
+// The component. Use `TiptapEditor` for the underlying editor instance type.
 export { default as Editor } from './Editor.vue'
 
 // Building blocks (compose without <Editor>)
@@ -32,10 +32,134 @@ export {
   type CommentKitOptions,
   type RichTextKitOptions,
   type InlineKitOptions,
+  type InlineStarterKitOptions,
 } from './kits'
 
 // Individual extensions + StarterKit (frappe-ui default config applied)
-export * from './extensions'
+// The list is written out rather than re-exported with `export *`: a wildcard
+// from an implementation module publishes whatever that file exports next
+// (PHILOSOPHY.md, P15).
+export {
+  // Suggestion engine
+  SuggestionExtension,
+  // Document basics
+  StarterKit,
+  EditorDropcursor,
+  Placeholder,
+  setPlaceholder,
+  Heading,
+  HeadingIds,
+  Toc,
+  Link,
+  Code,
+  CodeBlock,
+  ListJoin,
+  TaskList,
+  TaskItem,
+  Typography,
+  Markdown,
+  // Tables
+  Table,
+  TableRow,
+  TableCell,
+  TableHeader,
+  TableNavigation,
+  TableCellColor,
+  TableSelectionOverlay,
+  // Text styling
+  TextAlign,
+  TextStyle,
+  Color,
+  Highlight,
+  // Media and embeds
+  Image,
+  ImageGroup,
+  ImageViewer,
+  Video,
+  Attachment,
+  MediaDrop,
+  Iframe,
+  // Inline widgets
+  Mention,
+  Tag,
+  Emoji,
+  SlashCommands,
+  // Clipboard
+  ContentPaste,
+  StyleClipboard,
+} from './extensions'
+export type {
+  SuggestionExtensionOptions,
+  SuggestionRange,
+  MentionSuggestionItem,
+  TagSuggestionItem,
+  StarterKitOptions,
+  CommandItem,
+  SlashCommandsOptions,
+  MediaUploadRequestOptions,
+  MarkdownExtensionOptions,
+} from './extensions'
 
 // Menu items, groups, separators, and toolbar presets
-export * from './menu'
+export {
+  // Marks
+  Bold,
+  Italic,
+  Strike,
+  InlineCode,
+  // Blocks
+  Paragraph,
+  H1,
+  H2,
+  H3,
+  H4,
+  H5,
+  H6,
+  HeadingGroup,
+  BulletList,
+  OrderedList,
+  Blockquote,
+  HorizontalRule,
+  // Alignment and color
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  FontColor,
+  FontHighlight,
+  // Insertions
+  InsertImage,
+  InsertVideo,
+  InsertAttachment,
+  InsertLink,
+  InsertIframe,
+  InsertTable,
+  // History
+  Undo,
+  Redo,
+  // Layout
+  Separator,
+  // Table commands
+  TableAddColumnBefore,
+  TableAddColumnAfter,
+  TableDeleteColumn,
+  TableAddRowBefore,
+  TableAddRowAfter,
+  TableDeleteRow,
+  TableToggleHeaderRow,
+  TableMergeOrSplit,
+  TableDelete,
+  CellColor,
+  // Toolbar presets
+  tableToolbar,
+  minimalToolbar,
+  commentToolbar,
+  articleToolbar,
+} from './menu'
+export type {
+  MenuActionContext,
+  CommandMenuItem,
+  MenuGroupItem,
+  MenuItem,
+  EditorMenuOptions,
+  EditorMenuShouldShowContext,
+} from './menu'

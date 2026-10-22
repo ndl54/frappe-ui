@@ -7,8 +7,10 @@ import {
   toValue,
 } from 'vue'
 import { UseFetchOptions, AfterFetchContext } from '@vueuse/core'
-import { useFrappeFetch } from '../useFrappeFetch'
+import { getDispatchStamp, useFrappeFetch } from '../useFrappeFetch'
+import { LOCAL_WRITE } from '../writeGate'
 import { useCall } from '../useCall/useCall'
+import { useIsolatedCall } from '../useIsolatedCall'
 import { UseCallOptions } from '../useCall/types'
 import { docStore } from '../docStore'
 import { listStore } from '../useList/listStore'
@@ -24,10 +26,34 @@ type TransformMethods<T> = {
       : never
 }
 
-interface DocMethodOption<T = any>
-  extends Omit<UseCallOptions<T>, 'url' | 'baseUrl'> {
+interface DocMethodOption<T = any> extends Omit<
+  UseCallOptions<T>,
+  'url' | 'baseUrl' | 'immediate' | 'refetch'
+> {
   name: string
 }
+
+/**
+ * Members `useDoc()` returns itself. A `methods:` entry is spread on top of
+ * them, so a colliding name would replace a built-in and break every caller
+ * that reads it — silently, because the object still has the key.
+ */
+const RESERVED_DOC_MEMBERS = new Set([
+  'doc',
+  'error',
+  'loading',
+  'aborted',
+  'canAbort',
+  'isFetching',
+  'isFinished',
+  'execute',
+  'fetch',
+  'reload',
+  'abort',
+  'setValue',
+  'delete',
+  'onSuccess',
+])
 
 interface UseDocOptions<TDoc> {
   doctype: string
@@ -36,6 +62,7 @@ interface UseDocOptions<TDoc> {
   url?: string
   methods?: Record<string, string | DocMethodOption>
   immediate?: boolean
+  staleOnError?: boolean
   transform?: (doc: TDoc & { doctype: string }) => TDoc & { doctype: string }
 }
 
@@ -49,6 +76,7 @@ export function useDoc<TDoc extends { name: string }, TMethods = {}>(
     url: customUrl = '',
     methods = {},
     immediate = true,
+    staleOnError = false,
     transform,
   } = options
 
@@ -72,7 +100,10 @@ export function useDoc<TDoc extends { name: string }, TMethods = {}>(
   }
 
   const fetchOptions: UseFetchOptions = {
-    immediate,
+    // Don't fire the initial GET while the name is still unresolved (it would
+    // hit the malformed `/api/v2/document/<doctype>/` URL). refetch:true makes
+    // the request fire automatically once the name resolves and the URL changes.
+    immediate: immediate && Boolean(toValue(name)?.trim()),
     refetch: true,
     afterFetch(ctx: AfterFetchContext<{ data: TDoc }>) {
       if (ctx.data) {
@@ -81,11 +112,18 @@ export function useDoc<TDoc extends { name: string }, TMethods = {}>(
           doctype,
           name: String(ctx.data.data.name),
         }
-        docStore.setDoc(doc)
+        // Stamped with the request's sequence, so a reload that an in-between
+        // write has overtaken cannot put the older doc back (#1017). The
+        // stamp's `record` is false for this GET: a read is admitted on its
+        // sequence but must not record — the server may answer it before an
+        // earlier-dispatched save commits, and recording here would gate that
+        // save's response out for good.
+        let stamp = getDispatchStamp(ctx.response) ?? LOCAL_WRITE
+        docStore.setDoc(doc, stamp)
         if (transform) {
           doc = transform(doc)
         }
-        listStore.updateRow(doctype, ctx.data.data)
+        listStore.updateRow(doctype, ctx.data.data, stamp)
         triggerSuccessCallbacks(doc)
       }
       return ctx
@@ -95,9 +133,18 @@ export function useDoc<TDoc extends { name: string }, TMethods = {}>(
   const { error, isFetching, isFinished, canAbort, aborted, abort, execute } =
     useFrappeFetch(url, fetchOptions).get()
 
-  let docMethods: Record<string, ReturnType<typeof useCall>> = {}
+  // `useIsolatedCall`, not `useCall`: one shared call drops or crosses
+  // concurrent submits (#991). Same public shape either way.
+  let docMethods: Record<string, ReturnType<typeof useIsolatedCall>> = {}
   if (methods) {
     for (let key in methods) {
+      if (RESERVED_DOC_MEMBERS.has(key)) {
+        throw new Error(
+          `[frappe-ui] useDoc({ doctype: '${doctype}' }) declares a method named "${key}", ` +
+            'which is already a member of the object useDoc returns. Rename the method ' +
+            `key — the document method it calls keeps its own name through \`{ ${key}: { name: '…' } }\`.`,
+        )
+      }
       let option: DocMethodOption
       if (typeof methods[key] === 'string') {
         option = {
@@ -108,58 +155,78 @@ export function useDoc<TDoc extends { name: string }, TMethods = {}>(
       }
 
       let callOptions: UseCallOptions = {
-        immediate: false,
-        refetch: false,
         method: 'POST',
         ...option,
         baseUrl,
+        // After the spread, not before it: a document method fires on
+        // `submit()` only. With `refetch: true` the params watcher re-sends
+        // the method on every edit to the document and `submit()` sends
+        // nothing at all (DAT-Q6).
+        immediate: false,
+        refetch: false,
         url: computed(
           () =>
             `/api/v2/document/${doctype}/${toValue(name)}/method/${option.name}`,
         ),
       }
 
-      docMethods[key] = readonly(useCall(callOptions))
+      docMethods[key] = readonly(useIsolatedCall(callOptions))
     }
   }
 
-  let setValue = useCall<TDoc, Partial<TDoc>>({
+  let setValue = useIsolatedCall<TDoc, Partial<TDoc>>({
     url: computed(() => `/api/v2/document/${doctype}/${toValue(name)}`),
     method: 'PUT',
     baseUrl,
     immediate: false,
     refetch: false,
-    onSuccess(data) {
-      let docWithType = { ...data, doctype }
-      if (transform) {
-        docWithType = transform(docWithType)
-      }
-      docStore.setDoc(docWithType)
-      listStore.updateRow(doctype, data)
+    onStoreWrite(data, stamp) {
+      // Store the untransformed doc; the `doc` computed applies `transform` on
+      // read. Transforming here too would run it twice (a bug for any
+      // non-idempotent transform). Mirrors afterFetch.
+      docStore.setDoc({ ...data, doctype }, stamp)
+      listStore.updateRow(doctype, data, stamp)
     },
   })
 
   type DeleteResponse = 'ok'
-  const delete_ = useCall<DeleteResponse>({
+  const delete_ = useIsolatedCall<DeleteResponse>({
     url: computed(() => `/api/v2/document/${doctype}/${toValue(name)}`),
     method: 'DELETE',
     baseUrl,
     immediate: false,
     refetch: false,
-    onSuccess() {
+    onStoreWrite() {
       docStore.removeDoc(doctype, toValue(name))
       listStore.removeRow(doctype, toValue(name))
     },
   })
 
-  let doc = docStore.getDoc(doctype, name, transform) as Ref<TDoc | null>
-  if (doc.value && transform) {
-    try {
-      doc.value = transform(doc.value)
-    } catch (e) {
-      docStore.removeDoc(doctype, toValue(name))
+  // Bind reactively to the document keyed by the *current* name. Resolving the
+  // name once at setup would statically bind to whatever it was then — if the
+  // name resolves after setup (e.g. while the GET is still in flight) the ref
+  // would never re-point to the real cache slot. A computed re-evaluates when
+  // the name resolves and when the store ref is populated.
+  const doc = computed<TDoc | null>(() => {
+    const nameStr = toValue(name)?.trim()
+    if (!nameStr) return null
+    const storeRef = docStore.getDoc(doctype, nameStr, {
+      staleOnError,
+    }) as Ref<TDoc | null>
+    let value = storeRef.value
+    if (value && transform) {
+      try {
+        value = transform(value as TDoc & { doctype: string })
+      } catch (e) {
+        // Invalidate, not remove: the doc broke locally, the server still
+        // has it. `removeDoc`'s terminal stamp would reject an in-flight
+        // write that should repopulate the store.
+        docStore.invalidateDoc(doctype, nameStr)
+        return null
+      }
     }
-  }
+    return value
+  })
   let out = reactive({
     doc,
     error,

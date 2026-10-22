@@ -25,16 +25,54 @@ declare module '@tiptap/core' {
     mediaUpload: {
       /** Upload and insert already-provided video files (e.g. from a drop). */
       uploadVideoFiles: (files: File[], pos?: number | null) => ReturnType
+      /** Replace an existing image node while keeping its caption/options. */
+      replaceImage: (pos: number, file: File) => ReturnType
+      /** Replace an existing video node while keeping its caption/options. */
+      replaceVideo: (pos: number, file: File) => ReturnType
+      /** Toggle video playback options. */
+      setVideoOptions: (options: {
+        autoplay?: boolean
+        loop?: boolean
+        muted?: boolean
+      }) => ReturnType
     }
   }
 }
 
-/** Result of a successful upload. Must carry a `file_url`. */
-export interface UploadedFile extends Partial<FrappeUploadedFile> {
+/**
+ * Result of a successful upload. `file_url` is required: every media node
+ * reads it to set `src`, so a result without one inserts a broken node.
+ *
+ * The index signature keeps server fields the editor does not know about, so
+ * an upload handler can return the raw File document.
+ */
+export interface UploadedMedia extends Partial<FrappeUploadedFile> {
   file_url: string
   width?: number | null
   height?: number | null
+  [key: string]: unknown
 }
+
+export interface MediaUploadProgress {
+  loaded: number
+  total: number
+  percent: number
+}
+
+export interface MediaUploadRequestOptions {
+  signal?: AbortSignal
+  onProgress?: (progress: MediaUploadProgress) => void
+}
+
+/**
+ * Host-provided upload function. The engine passes `options` (abort signal +
+ * progress callback) on every call; implementations may ignore it, so legacy
+ * single-parameter functions remain assignable.
+ */
+export type UploadFunction = (
+  file: File,
+  options?: MediaUploadRequestOptions,
+) => Promise<UploadedMedia>
 
 /**
  * Effective upload options. Mirrors the legacy extension option shape: the only
@@ -42,7 +80,7 @@ export interface UploadedFile extends Partial<FrappeUploadedFile> {
  * keys are carried through untouched.
  */
 export interface MediaUploadOptions {
-  uploadFunction?: ((file: File) => Promise<UploadedFile>) | null
+  uploadFunction?: UploadFunction | null
   HTMLAttributes?: Record<string, unknown>
   [k: string]: unknown
 }
@@ -50,7 +88,7 @@ export interface MediaUploadOptions {
 /** Outcome of a no-doc-mutation single-file upload. */
 export interface UploadResult {
   success: boolean
-  file?: UploadedFile
+  file?: UploadedMedia
   error?: Error
 }
 
@@ -93,6 +131,7 @@ export interface MediaUploadEngine {
     editor: Editor,
     pos: number,
     options: MediaUploadOptions,
+    attrs?: Record<string, unknown>,
   ): Promise<void>
   /** Re-run an upload for the failed node at `pos` using its staged file. */
   reupload(

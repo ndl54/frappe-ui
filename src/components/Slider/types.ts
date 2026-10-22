@@ -1,4 +1,4 @@
-import type { ToggleSize } from '../../composables/inputTypes'
+import type { RangeSize } from '../../composables/inputTypes'
 import type { InputLabelingProps } from '../../composables/useInputLabeling'
 
 /**
@@ -20,11 +20,11 @@ export interface SliderProps extends InputLabelingProps {
   /** Maximum allowed slider value. */
   max?: number
 
-  /** Minimum allowed slider value. */
+  /** Minimum allowed slider value. Negative values enable bidirectional fill from zero. */
   min?: number
 
   /** Visual size of the slider. */
-  size?: ToggleSize
+  size?: RangeSize
 
   /** Disables the slider. */
   disabled?: boolean

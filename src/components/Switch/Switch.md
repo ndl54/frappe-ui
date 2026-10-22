@@ -1,34 +1,67 @@
 # Switch
 
-A toggle input for turning options on or off. Clearly indicates state changes and allows quick, intuitive control.
+A toggle that turns a setting on or off.
 
-<ComponentPreview name="Switch-Default" layout="stacked" />
+<ComponentPlayground name="Switch" />
 
-## Sizes
+## Examples
 
-<ComponentPreview name="Switch-Sizes" />
+### Notification settings
 
-## With icon
-
-Strings starting with `lucide-` route through the shared Lucide
-Tailwind utility. Component values are rendered with `<component :is>`.
+`icon` shows an icon before the label.
 
 <ComponentPreview name="Switch-Icons" />
 
-## Labeling
+### Toolbar toggle
 
-<ComponentPreview name="Switch-Labeling" />
+`padded` gives the switch a clickable surface and a hover state that match the
+buttons beside it. A click anywhere on the row toggles the switch.
 
-## States
+<ComponentPreview name="Switch-Toolbar" />
 
-<ComponentPreview name="Switch-States" />
+## Behavior
 
-## Deprecated `change` emit
+### Icon
 
-The `change` emit is kept for backwards compatibility and will fire a
-dev-mode `[frappe-ui] Switch.change is deprecated. Use update:modelValue / v-model instead.`
-warning when bound. Use `v-model` / `update:modelValue` instead.
+`icon` takes a `lucide-` class name, such as `"lucide-bell"`, or a component,
+which is rendered with `<component :is>`.
 
-<ComponentPreview name="Switch-LegacyChange" />
+### Control position
+
+`controlPosition` is `end` by default, so the switch sits after the label and
+the row fills the available width. `start` puts the switch before the label,
+and the row fits its content. Both follow the text direction.
+
+### Padded
+
+`padded` wraps the switch and the label in a clickable surface with hover,
+active and focus states, for toolbars and menu items. Without `padded`, only
+the switch and its label respond to clicks, and the row has no hover or focus
+state.
+
+### Label, description and error
+
+`label` renders beside the switch and `description` below it. `error` renders
+below the row and hides `description`. It takes a string, an array of strings
+(one line each), or an `Error`, the same values as
+[ErrorMessage](./errormessage). An empty string or an empty array means no
+error. `required` adds a red asterisk to the label.
+
+The `#label` slot replaces the label text and the required marker, and receives
+`{ required }`. A `#description` slot is not hidden by `error`. It renders
+above the error.
+
+### Attributes
+
+`class` and `style` go to the layout wrapper. Everything else (`name`,
+`aria-*`, `data-*` and listeners) goes once to the interactive element, which
+for `Switch` is the switch button.
+
+## Accessibility
+
+`Switch` renders a button with `role="switch"`, and `Space` or `Enter` toggles
+it. An icon given as a class name is hidden from screen readers. `required`
+sets `aria-required`. While `error` is set, the switch gets `aria-invalid` and
+an `aria-errormessage` that points to the error text.
 
 <!-- @include: ./Switch.api.md -->

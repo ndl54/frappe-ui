@@ -15,13 +15,14 @@ import {
 import type { MediaDimensions } from '#molecules/editor/extensions/shared/media-dimensions'
 import type {
   InsertMode,
-  UploadedFile,
+  UploadedMedia,
 } from '#molecules/editor/extensions/shared/media-upload-types'
 
 /** Optional intrinsic dimensions (null when the probe failed). */
 export interface OptionalDimensions {
   width: number | null
   height: number | null
+  poster?: string
 }
 
 /**
@@ -76,8 +77,10 @@ export function insertPlaceholder(
   mode: InsertMode,
   uploadId: string,
   dims: OptionalDimensions,
+  attrs: Record<string, unknown> = {},
 ): void {
   const node = view.state.schema.nodes[nodeName].create({
+    ...attrs,
     loading: true,
     uploadId,
     src: null,
@@ -99,12 +102,25 @@ export function insertPlaceholder(
   dispatchIfAlive(view, tr)
 }
 
+/** Remove a loading placeholder after user cancellation. */
+export function removeNodeByUploadId(
+  view: EditorView,
+  nodeName: string,
+  uploadId: string,
+): void {
+  const pos = findNodeByUploadId(view, nodeName, uploadId)
+  if (pos === null) return
+  const node = view.state.doc.nodeAt(pos)
+  if (!node) return
+  dispatchIfAlive(view, view.state.tr.delete(pos, pos + node.nodeSize))
+}
+
 /** Write the uploaded src/dimensions back onto the placeholder node. */
 export function applyUploadSuccess(
   view: EditorView,
   nodeName: string,
   uploadId: string,
-  uploaded: UploadedFile,
+  uploaded: UploadedMedia,
 ): void {
   const pos = findNodeByUploadId(view, nodeName, uploadId)
   if (pos === null) return
@@ -118,6 +134,7 @@ export function applyUploadSuccess(
       width: uploaded.width || node.attrs.width,
       height: uploaded.height || node.attrs.height,
       loading: false,
+      error: null,
     }),
   )
 }

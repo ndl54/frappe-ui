@@ -1,73 +1,121 @@
 <template>
-  <div class="flex flex-col mt-2">
-    <div
-      v-if="props.label"
-      class="relative flex items-center gap-1 px-2 py-1.5"
-      :class="props.collapsible ? 'cursor-pointer' : ''"
-      @click="props.collapsible ? (isCollapsed = !isCollapsed) : null"
-    >
+  <!--
+    Collapsible group: a label row plus a body that shows/hides. Compose
+    SidebarItem (or anything else) as children in the default slot — this
+    component owns only the label + collapse chrome, not the rows inside it.
+  -->
+  <div
+    data-slot="sidebar-section"
+    :data-state="isSectionCollapsed ? 'collapsed' : 'expanded'"
+    class="mt-2 flex flex-col"
+  >
+    <div v-if="label" class="relative flex items-center gap-1 px-2 py-1.5">
+      <!--
+        ARIA accordion pattern: the heading wraps the button, not the other
+        way around — a <button> only accepts phrasing content, so nesting an
+        <h3> inside it strips the heading from the accessibility tree.
+      -->
       <h3
-        class="h-4 text-sm text-ink-gray-5 transition-all duration-300 ease-in-out"
+        :id="headingId"
+        class="h-4 text-sm leading-tighter text-ink-gray-5 transition-all duration-300 ease-in-out"
         :class="
           isSidebarCollapsed
             ? 'w-0 overflow-hidden opacity-0'
             : 'w-auto opacity-100'
         "
       >
-        {{ props.label }}
+        <button
+          v-if="collapsible"
+          type="button"
+          class="flex items-center gap-1 rounded-4 focus-visible:ring-0 focus-visible:focus-ring"
+          :aria-expanded="!isSectionCollapsed"
+          :aria-controls="bodyId"
+          :aria-hidden="isSidebarCollapsed || undefined"
+          :tabindex="isSidebarCollapsed ? -1 : undefined"
+          @click="isSectionCollapsed = !isSectionCollapsed"
+        >
+          {{ label }}
+          <span
+            class="lucide-chevron-right size-4 text-ink-gray-5 transition-all duration-300 ease-in-out"
+            :class="{ 'rotate-90': !isSectionCollapsed }"
+          />
+        </button>
+        <template v-else>{{ label }}</template>
       </h3>
-      <div v-if="props.collapsible">
-        <span
-          v-if="!isSidebarCollapsed"
-          class="lucide-chevron-right size-4 text-ink-gray-5 transition-all duration-300 ease-in-out"
-          :class="{ 'rotate-90': !isCollapsed }"
-        />
-      </div>
       <div
         v-if="isSidebarCollapsed"
-        class="absolute top-0 left-0 flex h-full w-full items-center justify-center transition-all duration-300 ease-in-out"
-        :class="isSidebarCollapsed ? 'opacity-100' : 'opacity-0'"
+        aria-hidden="true"
+        class="absolute inset-0 flex items-center"
       >
         <hr class="w-full border-t border-ink-gray-3" />
       </div>
     </div>
+
     <transition
       enter-active-class="duration-300 ease-in"
-      leave-active-class="duration-300 ease-[cubic-bezier(0, 1, 0.5, 1)]"
+      leave-active-class="duration-300 ease-[cubic-bezier(0,1,0.5,1)]"
       enter-to-class="max-h-[200px] overflow-hidden"
       leave-from-class="max-h-[200px] overflow-hidden"
       enter-from-class="max-h-0 overflow-hidden"
       leave-to-class="max-h-0 overflow-hidden"
     >
-      <nav v-if="!isCollapsed" class="flex flex-col gap-0.5">
-        <template v-for="item in visibleItems" :key="item.label">
-          <slot name="sidebar-item" :item="item" :isCollapsed="isSidebarCollapsed">
-            <SidebarItem
-              :label="item.label"
-              :accessKey="item.accessKey"
-              :icon="item.icon"
-              :suffix="item.suffix"
-              :to="item.to"
-              :isActive="item.isActive"
-              :onClick="item.onClick"
-            />
-          </slot>
-        </template>
-      </nav>
+      <!--
+        v-show, not v-if: `aria-controls="bodyId"` on the trigger button must
+        resolve to a real element at all times, including the instant
+        aria-expanded flips to "false" — an id that only exists while
+        expanded breaks the reference exactly when it's read.
+
+        role="group", not a <nav>: Sidebar is already the navigation landmark,
+        and a landmark inside a landmark buys nothing. The group takes its
+        name from the <h3>, so a non-collapsible section is named too.
+      -->
+      <div
+        v-show="!isSectionCollapsed"
+        :id="bodyId"
+        role="group"
+        :aria-labelledby="label ? headingId : undefined"
+        class="flex flex-col gap-0.5"
+      >
+        <slot />
+      </div>
     </transition>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, inject, ref, toValue } from 'vue'
-import SidebarItem from './SidebarItem.vue'
+import { computed, inject } from 'vue'
 import { SidebarSectionProps, sidebarCollapsedKey } from './types'
+import { useId } from '../../utils/useId'
 
-const props = defineProps<SidebarSectionProps>()
+defineProps<SidebarSectionProps>()
 
-const isSidebarCollapsed = inject(sidebarCollapsedKey, computed(() => false))
-const isCollapsed = ref(false)
-const visibleItems = computed(() =>
-  props.items.filter((item) => toValue(item.condition) !== false),
+defineSlots<{
+  /** The group's rows — compose `SidebarItem` (or anything else) here. */
+  default?: () => any
+}>()
+
+const isSidebarCollapsed = inject(
+  sidebarCollapsedKey,
+  computed(() => false),
 )
+
+// `defineModel` already declares this event, but it carries no place to write
+// the event's own description. Redeclaring it here is what puts the sentence
+// in the generated API table.
+defineEmits<{
+  /** Fired when the section is collapsed or expanded. */
+  'update:collapsed': [value: boolean]
+}>()
+
+// Per-section open/closed state for `collapsible` sections — distinct from the
+// whole-sidebar collapse above. The JSDoc below stays on one line: the
+// generator copies it into the API table verbatim, and the table renders its
+// line breaks.
+/** v-model. Whether the section is collapsed. Bind it to own the state (start a section collapsed, persist the choice); left unbound the section manages it internally, starting expanded. */
+const isSectionCollapsed = defineModel<boolean>('collapsed', { default: false })
+
+// The heading carries the id, not the trigger button: a non-collapsible
+// section has no button, and the group still has to be named.
+const headingId = useId()
+const bodyId = useId()
 </script>

@@ -31,13 +31,13 @@ const commands: Command[] = [
     label: 'Search documents',
     hint: 'Find',
     icon: 'lucide-file-search',
-    combo: 'Mod+/',
+    combo: 'Mod+Slash',
   },
   {
     label: 'Open settings',
     hint: 'Workspace',
     icon: 'lucide-settings',
-    combo: 'Mod+,',
+    combo: 'Mod+Comma',
   },
   { label: 'Switch theme', hint: 'Preferences', icon: 'lucide-moon-star' },
   { label: 'Log out', hint: 'Account', icon: 'lucide-log-out' },
@@ -111,7 +111,7 @@ function onEnter() {
         <li
           v-for="(cmd, i) in filtered"
           :key="cmd.label"
-          class="flex cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-base"
+          class="flex cursor-pointer items-center gap-3 rounded-5 px-3 py-2 text-base"
           :class="
             i === activeIndex
               ? 'bg-surface-gray-2 text-ink-gray-9'
@@ -126,12 +126,16 @@ function onEnter() {
           />
           <span class="flex-1 truncate">{{ cmd.label }}</span>
           <span class="text-p-xs text-ink-gray-5">{{ cmd.hint }}</span>
-          <KeyboardShortcut v-if="cmd.combo" :combo="cmd.combo" bg />
+          <KeyboardShortcut
+            v-if="cmd.combo"
+            :combo="cmd.combo"
+            bg
+          />
         </li>
       </ul>
 
       <div
-        class="flex items-center gap-4 border-t border-outline-gray-modals px-4 py-2 text-p-xs text-ink-gray-5"
+        class="flex items-center gap-4 border-t border-outline-elevation-2 px-4 py-2 text-p-xs text-ink-gray-5"
       >
         <span class="flex items-center gap-1.5">
           <KeyboardShortcut combo="ArrowUp" bg />

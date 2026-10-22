@@ -1,124 +1,85 @@
 <template>
-  <PopoverRoot v-model:open="open">
-    <PopoverAnchor :reference="anchorEl" as-child>
-      <div @keydown.down.prevent="onArrowDown">
+  <Popover
+    ref="popoverRef"
+    v-model:open="open"
+    trigger="manual"
+    :auto-focus="false"
+    :side="side"
+    :align="align"
+    :offset="offset"
+    :reference="anchorEl"
+  >
+    <template #trigger>
+      <div
+        ref="triggerWrapperRef"
+        v-bind="$attrs"
+        @keydown.down.prevent="onArrowDown"
+      >
         <slot name="trigger" v-bind="triggerSlotProps">
-          <slot name="target" v-bind="triggerSlotProps">
-            <TextInput
-              ref="textInputRef"
-              v-model="inputValue"
-              type="text"
-              :class="inputClass"
-              :id="id"
-              :label="label"
-              :description="description"
-              :error="error"
-              :required="required"
-              :size="size"
-              :variant="variant"
-              :placeholder="placeholder"
-              :disabled="disabled"
-              :readonly="readonly"
-              @pointerdown="onPointerDown"
-              @focus="onFocus"
-              @click="onClick"
-              @blur="onBlur"
-              @keydown.enter.prevent="onEnter"
-            >
-              <template v-if="$slots.prefix" #prefix>
-                <slot name="prefix" v-bind="triggerSlotProps" />
-              </template>
-              <template #suffix>
-                <slot name="suffix" v-bind="triggerSlotProps">
-                  <LucideChevronDown
-                    class="h-4 w-4 cursor-pointer"
-                    @mousedown.prevent="togglePopover"
-                  />
-                </slot>
-              </template>
-            </TextInput>
-          </slot>
+          <TextInput
+            ref="textInputRef"
+            v-model="inputValue"
+            type="text"
+            :id="id"
+            :label="label"
+            :description="description"
+            :error="error"
+            :required="required"
+            :size="size"
+            :variant="variant"
+            :placeholder="placeholder"
+            :disabled="disabled"
+            :readonly="readonly"
+            role="combobox"
+            aria-haspopup="dialog"
+            :aria-expanded="open"
+            :aria-controls="panelId"
+            @focus="onFocus"
+            @click="onClick"
+            @blur="onBlur"
+            @keydown.enter.prevent="onEnter"
+          >
+            <template v-if="$slots.prefix" #prefix>
+              <slot name="prefix" v-bind="triggerSlotProps" />
+            </template>
+            <template #suffix>
+              <slot name="suffix" v-bind="triggerSlotProps">
+                <span
+                  data-slot="chevron"
+                  class="lucide-chevron-down h-4 w-4 cursor-pointer"
+                  @mousedown.prevent="setOpen(!open)"
+                />
+              </slot>
+            </template>
+          </TextInput>
         </slot>
       </div>
-    </PopoverAnchor>
-    <PopoverPortal>
-      <PopoverContent
-        data-slot="content"
-        data-selection
-        class="z-[100]"
-        :side="side"
-        :align="align"
-        :side-offset="offset"
-        @open-auto-focus.prevent
-        @interact-outside="onInteractOutside"
-      >
-        <div
-          ref="popoverContentRef"
-          data-slot="content-body"
-          :data-motion="motion"
-          :class="contentClass"
-          style="transform-origin: var(--reka-popover-content-transform-origin)"
-        >
-          <slot :close="closePopover" />
-        </div>
-      </PopoverContent>
-    </PopoverPortal>
-  </PopoverRoot>
+    </template>
+
+    <slot v-bind="triggerSlotProps" />
+  </Popover>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
-import {
-  PopoverAnchor,
-  PopoverContent,
-  PopoverPortal,
-  PopoverRoot,
-} from 'reka-ui'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import Popover from '../../Popover/Popover.vue'
 import { TextInput } from '../../TextInput'
-import LucideChevronDown from '~icons/lucide/chevron-down'
-import { usePopoverMotion } from '../../../composables/usePopoverMotion'
-import type { InputSize, InputVariant } from '../../../composables/inputTypes'
-import type { FrappeUIError } from '../../../composables/useInputLabeling'
-import '../selection/popoverMotion.css'
+import { useReactiveSlots } from '../../../composables/useReactiveSlots'
+import type { PopoverExposed } from '../../Popover/types'
+import type {
+  PickerShellExposed,
+  PickerShellProps,
+  PickerShellSlots,
+  PickerShellTriggerSlotProps,
+} from './types'
 
-interface Props {
-  // Positioning — already resolved by caller from side/align/placement.
-  side: 'top' | 'right' | 'bottom' | 'left'
-  align: 'start' | 'center' | 'end'
-  offset: number
-
-  // Behaviour
-  openOnFocus?: boolean
-  openOnClick?: boolean
-
-  // TextInput pass-through
-  id?: string
-  label?: string
-  description?: string
-  error?: string | FrappeUIError
-  required?: boolean
-  size?: InputSize
-  variant?: InputVariant
-  placeholder?: string
-  disabled?: boolean
-  readonly?: boolean
-  inputClass?: string | Array<string> | Record<string, boolean>
-
-  // Display label exposed via trigger slot props for caller-rendered triggers.
-  displayLabel?: string
-
-  // Tailwind class string for the popover content body wrapper.
-  contentClass?: string
-}
-
-const props = withDefaults(defineProps<Props>(), {
+const props = withDefaults(defineProps<PickerShellProps>(), {
   openOnFocus: false,
   openOnClick: true,
   required: false,
   disabled: false,
   readonly: false,
   displayLabel: '',
-  contentClass: '',
 })
 
 const emit = defineEmits<{
@@ -131,66 +92,47 @@ const emit = defineEmits<{
   /** Signal that the parent should move keyboard focus into the popover
    *  content (e.g. into a calendar grid). Fired:
    *  - When the user presses ↓ on the trigger.
-   *  - When the popover opens with a custom trigger (no `TextInput` to type
-   *    into, so focus should jump straight into the content).
-   *  The default trigger keeps focus on the `TextInput` for typing. */
+   *  - When a gesture opens the popover and the trigger is a custom one (no
+   *    `TextInput` to type into, so focus should jump straight into the
+   *    content).
+   *  The default trigger keeps focus on the `TextInput` for typing. A shell
+   *  that is already open on its first render never fires this: nobody asked
+   *  for focus to move. */
   (e: 'requestFocus'): void
 }>()
 
-const slots = defineSlots<{
-  trigger?: (props: TriggerSlotProps) => any
-  target?: (props: TriggerSlotProps) => any
-  prefix?: (props: TriggerSlotProps) => any
-  suffix?: (props: TriggerSlotProps) => any
-  default?: (props: { close: () => void }) => any
-}>()
+defineSlots<PickerShellSlots>()
+const slots = useReactiveSlots<PickerShellSlots>()
+
+defineOptions({ inheritAttrs: false })
 
 const open = defineModel<boolean>('open', { default: false })
 const inputValue = defineModel<string>('inputValue', { default: '' })
 const typing = defineModel<boolean>('typing', { default: false })
 
-interface TriggerSlotProps {
-  togglePopover: () => void
-  isOpen: boolean
-  displayLabel: string
-  inputValue: string
-}
+const textInputRef = ref<InstanceType<typeof TextInput> | null>(null)
+const triggerWrapperRef = ref<HTMLElement | null>(null)
+const popoverRef = ref<PopoverExposed | null>(null)
 
-// Anchor the popover at the input element itself (not the labeling wrapper),
-// so it sits below the input rather than below the description text.
-const textInputRef = ref<{ el: HTMLElement | null } | null>(null)
-const popoverContentRef = ref<HTMLElement | null>(null)
+// `aria-controls` on the combobox has to name the panel. reka already puts an
+// id on the `role="dialog"` element it renders, so read that one instead of
+// wrapping the caller's content in a node of our own.
+const panelId = ref<string>()
 
+// Anchor to the `<input>` itself. Anchoring to the whole labelled field would
+// put the panel below the description.
 const anchorEl = computed(() => {
-  if (slots.trigger || slots.target) return undefined
-  return textInputRef.value?.el ?? undefined
+  if (slots.trigger) return undefined
+  return textInputRef.value?.inputElement ?? undefined
 })
 
-const { motion, onPointerDown: recordPointerDown } = usePopoverMotion(open)
-
-function onPointerDown() {
-  recordPointerDown()
+function setOpen(value: boolean) {
+  if (props.disabled && value) return
+  open.value = value
 }
 
-function togglePopover() {
-  open.value = !open.value
-}
-
-function closePopover() {
-  open.value = false
-}
-
-// Reka treats anything outside `PopoverContent` as "outside" — including our
-// own trigger — so a click on the input fires interact-outside and closes
-// the popover, then the click handler reopens it. Suppress the close when
-// the pointerdown originated inside the input's row (which holds the input
-// and any suffix like the chevron); those elements have their own logic.
-function onInteractOutside(event: Event) {
-  const target = event.target as Node | null
-  const triggerRow = textInputRef.value?.el?.parentElement
-  if (target && triggerRow?.contains(target)) {
-    event.preventDefault()
-  }
+function close() {
+  setOpen(false)
 }
 
 function onFocus() {
@@ -205,10 +147,11 @@ function onClick(e: MouseEvent) {
   emit('click', e)
 }
 
+// Focus moving into the portalled panel fires blur on the input. The panel
+// belongs to the input, so that is not a blur.
 function onBlur(e: FocusEvent) {
-  // Clicks inside the popover panel re-focus options; treat those as still-focused.
   const next = e.relatedTarget as Node | null
-  if (next && popoverContentRef.value?.contains(next)) return
+  if (next && popoverRef.value?.contentEl?.contains(next)) return
   emit('blur')
   typing.value = false
 }
@@ -223,42 +166,78 @@ function onArrowDown() {
   emit('requestFocus')
 }
 
-const triggerSlotProps = computed<TriggerSlotProps>(() => ({
-  togglePopover,
-  isOpen: open.value,
+const triggerSlotProps = computed<PickerShellTriggerSlotProps>(() => ({
+  open: open.value,
+  disabled: Boolean(props.disabled),
+  setOpen,
+  close,
   displayLabel: props.displayLabel,
   inputValue: inputValue.value,
 }))
 
-const hasCustomTrigger = computed(() => !!(slots.trigger || slots.target))
+const hasCustomTrigger = computed(() => !!slots.trigger)
+
+// `moveFocus` is false on the mount path. Every other route into `onOpened`
+// follows a gesture, and a panel the user just opened should take focus; a
+// panel that is simply part of the first render follows no gesture, so moving
+// focus would take it from wherever the page put it.
+function onOpened(moveFocus = true) {
+  emit('open')
+  nextTick(() => {
+    panelId.value = popoverRef.value?.contentEl?.id || undefined
+  })
+  // Custom triggers (e.g. a button) have no typing context — once the
+  // popover is open the user wants to interact with the content. Signal
+  // the parent to move focus there. The default `TextInput` trigger
+  // keeps its focus so the user can type, and only the explicit ↓
+  // handler emits `requestFocus`.
+  if (moveFocus && hasCustomTrigger.value) emit('requestFocus')
+}
 
 watch(open, (val, prev) => {
   if (val === prev) return
   if (val) {
-    emit('open')
-    // Custom triggers (e.g. a button) have no typing context — once the
-    // popover is open the user wants to interact with the content. Signal
-    // the parent to move focus there. The default `TextInput` trigger
-    // keeps its focus so the user can type, and only the explicit ↓
-    // handler emits `requestFocus`.
-    if (hasCustomTrigger.value) emit('requestFocus')
+    onOpened()
   } else {
     // Restore focus to the trigger input if the popover content had focus
     // (Esc, date selection in auto-close mode). Click-outside leaves focus
     // on the clicked element, so we skip in that case.
-    const hadFocusInside = popoverContentRef.value?.contains(
+    const hadFocusInside = popoverRef.value?.contentEl?.contains(
       document.activeElement,
     )
     emit('close')
+    panelId.value = undefined
     if (hadFocusInside) {
-      nextTick(() => textInputRef.value?.el?.focus())
+      nextTick(() => textInputRef.value?.focus())
     }
   }
 })
 
-defineExpose({
-  open: () => {
-    open.value = true
+// A shell mounted with `open` already true never crosses the watch above, so
+// the open-time work — the panel id behind `aria-controls`, the parent's draft
+// initialization — runs here instead. No `update:open`: the parent is the one
+// that asked for an open panel. Focus stays put: the default trigger does not
+// take focus at mount either, because `:auto-focus="false"` cancels reka's
+// mount autofocus, and a page has no way to know the panel was coming.
+onMounted(() => {
+  if (open.value) onOpened(false)
+})
+
+defineExpose<PickerShellExposed>({
+  open: () => setOpen(true),
+  close,
+  // With a custom `#trigger` there is no `TextInput` to focus, so focus falls
+  // back to the first tabbable node the caller rendered.
+  focus: (options?: FocusOptions) => {
+    if (textInputRef.value) {
+      textInputRef.value.focus(options)
+      return
+    }
+    triggerWrapperRef.value
+      ?.querySelector<HTMLElement>(
+        'input, button, select, textarea, [tabindex]:not([tabindex="-1"])',
+      )
+      ?.focus(options)
   },
 })
 </script>

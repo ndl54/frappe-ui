@@ -11,27 +11,120 @@ type Member = {
 }
 
 const ALL_MEMBERS: Member[] = [
-  { label: 'Alex Rivera', value: 'alex@example.com', image: 'https://i.pravatar.cc/80?u=alex@example.com', role: 'Engineering' },
-  { label: 'Alexandra Chen', value: 'alexandra@example.com', image: 'https://i.pravatar.cc/80?u=alexandra@example.com', role: 'Design' },
-  { label: 'Alexei Volkov', value: 'alexei@example.com', image: 'https://i.pravatar.cc/80?u=alexei@example.com', role: 'Engineering' },
-  { label: 'Priya Shah', value: 'priya@example.com', image: 'https://i.pravatar.cc/80?u=priya@example.com', role: 'Design' },
-  { label: 'Priyanka Mehta', value: 'priyanka@example.com', image: 'https://i.pravatar.cc/80?u=priyanka@example.com', role: 'Product' },
-  { label: 'Marcus Lee', value: 'marcus@example.com', image: 'https://i.pravatar.cc/80?u=marcus@example.com', role: 'Product' },
-  { label: 'Marco Silva', value: 'marco@example.com', image: 'https://i.pravatar.cc/80?u=marco@example.com', role: 'Engineering' },
-  { label: 'Maria Garcia', value: 'maria@example.com', image: 'https://i.pravatar.cc/80?u=maria@example.com', role: 'Marketing' },
-  { label: 'Sofia Hartmann', value: 'sofia@example.com', image: 'https://i.pravatar.cc/80?u=sofia@example.com', role: 'Engineering' },
-  { label: 'Sophie Laurent', value: 'sophie@example.com', image: 'https://i.pravatar.cc/80?u=sophie@example.com', role: 'Sales' },
-  { label: 'Kenji Tanaka', value: 'kenji@example.com', image: 'https://i.pravatar.cc/80?u=kenji@example.com', role: 'Design' },
-  { label: 'Kenta Mori', value: 'kenta@example.com', image: 'https://i.pravatar.cc/80?u=kenta@example.com', role: 'Engineering' },
-  { label: 'Nadia Okafor', value: 'nadia@example.com', image: 'https://i.pravatar.cc/80?u=nadia@example.com', role: 'Product' },
-  { label: 'Diego Alvarez', value: 'diego@example.com', image: 'https://i.pravatar.cc/80?u=diego@example.com', role: 'Engineering' },
-  { label: 'Lina Petrova', value: 'lina@example.com', image: 'https://i.pravatar.cc/80?u=lina@example.com', role: 'Marketing' },
-  { label: 'Liam Connor', value: 'liam@example.com', image: 'https://i.pravatar.cc/80?u=liam@example.com', role: 'Product' },
-  { label: 'Hassan Iqbal', value: 'hassan@example.com', image: 'https://i.pravatar.cc/80?u=hassan@example.com', role: 'Sales' },
-  { label: 'Ava Nguyen', value: 'ava@example.com', image: 'https://i.pravatar.cc/80?u=ava@example.com', role: 'Engineering' },
+  {
+    label: 'Alex Rivera',
+    value: 'alex@example.com',
+    image: 'https://i.pravatar.cc/80?u=alex@example.com',
+    role: 'Engineering',
+  },
+  {
+    label: 'Alexandra Chen',
+    value: 'alexandra@example.com',
+    image: 'https://i.pravatar.cc/80?u=alexandra@example.com',
+    role: 'Design',
+  },
+  {
+    label: 'Alexei Volkov',
+    value: 'alexei@example.com',
+    image: 'https://i.pravatar.cc/80?u=alexei@example.com',
+    role: 'Engineering',
+  },
+  {
+    label: 'Priya Shah',
+    value: 'priya@example.com',
+    image: 'https://i.pravatar.cc/80?u=priya@example.com',
+    role: 'Design',
+  },
+  {
+    label: 'Priyanka Mehta',
+    value: 'priyanka@example.com',
+    image: 'https://i.pravatar.cc/80?u=priyanka@example.com',
+    role: 'Product',
+  },
+  {
+    label: 'Marcus Lee',
+    value: 'marcus@example.com',
+    image: 'https://i.pravatar.cc/80?u=marcus@example.com',
+    role: 'Product',
+  },
+  {
+    label: 'Marco Silva',
+    value: 'marco@example.com',
+    image: 'https://i.pravatar.cc/80?u=marco@example.com',
+    role: 'Engineering',
+  },
+  {
+    label: 'Maria Garcia',
+    value: 'maria@example.com',
+    image: 'https://i.pravatar.cc/80?u=maria@example.com',
+    role: 'Marketing',
+  },
+  {
+    label: 'Sofia Hartmann',
+    value: 'sofia@example.com',
+    image: 'https://i.pravatar.cc/80?u=sofia@example.com',
+    role: 'Engineering',
+  },
+  {
+    label: 'Sophie Laurent',
+    value: 'sophie@example.com',
+    image: 'https://i.pravatar.cc/80?u=sophie@example.com',
+    role: 'Sales',
+  },
+  {
+    label: 'Kenji Tanaka',
+    value: 'kenji@example.com',
+    image: 'https://i.pravatar.cc/80?u=kenji@example.com',
+    role: 'Design',
+  },
+  {
+    label: 'Kenta Mori',
+    value: 'kenta@example.com',
+    image: 'https://i.pravatar.cc/80?u=kenta@example.com',
+    role: 'Engineering',
+  },
+  {
+    label: 'Nadia Okafor',
+    value: 'nadia@example.com',
+    image: 'https://i.pravatar.cc/80?u=nadia@example.com',
+    role: 'Product',
+  },
+  {
+    label: 'Diego Alvarez',
+    value: 'diego@example.com',
+    image: 'https://i.pravatar.cc/80?u=diego@example.com',
+    role: 'Engineering',
+  },
+  {
+    label: 'Lina Petrova',
+    value: 'lina@example.com',
+    image: 'https://i.pravatar.cc/80?u=lina@example.com',
+    role: 'Marketing',
+  },
+  {
+    label: 'Liam Connor',
+    value: 'liam@example.com',
+    image: 'https://i.pravatar.cc/80?u=liam@example.com',
+    role: 'Product',
+  },
+  {
+    label: 'Hassan Iqbal',
+    value: 'hassan@example.com',
+    image: 'https://i.pravatar.cc/80?u=hassan@example.com',
+    role: 'Sales',
+  },
+  {
+    label: 'Ava Nguyen',
+    value: 'ava@example.com',
+    image: 'https://i.pravatar.cc/80?u=ava@example.com',
+    role: 'Engineering',
+  },
 ]
 
 // Mocks a server endpoint: 400ms latency + substring match on label/value.
+// A real backend would rank and fuzzy-match, which is why the picker below
+// passes `:filterable="false"` — a second client-side substring pass would
+// silently drop anything the server matched but the query doesn't contain.
 function searchMembersApi(query: string): Promise<Member[]> {
   return new Promise((resolve) => {
     setTimeout(() => {
@@ -49,6 +142,7 @@ function searchMembersApi(query: string): Promise<Member[]> {
 }
 
 const value = ref<string[]>([])
+const query = ref('')
 const results = ref<Member[]>([])
 const loading = ref(false)
 const knownById = ref(new Map<string, Member>())
@@ -83,20 +177,29 @@ const options = computed<Member[]>(() => {
 })
 
 function onOpen(isOpen: boolean) {
-  if (isOpen && results.value.length === 0) fetchMembers('')
+  if (!isOpen) return
+  // Listening for `@update:query` hands ownership of the query over, so the
+  // open-time reset MultiSelect does for an unbound query is ours to do.
+  // Without it the last search text stays in the box.
+  query.value = ''
+  if (results.value.length === 0) fetchMembers('')
 }
 </script>
 
 <template>
+  <!-- The `as` casts on the two handlers below exist because these model
+       emits are declared twice; drop them when #1096 removes the duplicates. -->
   <MultiSelect
     v-model="value"
+    v-model:query="query"
     :options="options"
     :loading="loading"
+    :filterable="false"
     placeholder="Search members…"
     empty-text="No members found"
     class="w-80"
-    @update:query="onQueryChange"
-    @update:open="onOpen"
+    @update:query="(q) => onQueryChange(q as string)"
+    @update:open="(isOpen) => onOpen(isOpen as boolean)"
   >
     <template #item-prefix="{ item }">
       <Avatar :image="(item as Member).image" :label="item.label" size="sm" />

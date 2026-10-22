@@ -1,30 +1,37 @@
 <template>
   <Dialog
     v-model="modelValue"
-    :options="{
-      title: props.mode === 'edit' ? 'Edit Images' : 'Upload Images',
-      size: '3xl',
-    }"
+    :title="props.mode === 'edit' ? 'Edit Images' : 'Upload Images'"
+    size="3xl"
     @close="$emit('close')"
-    :disableOutsideClickToClose="true"
+    :dismissible="false"
   >
-    <template #body-content>
-      <div ref="dialogBody" class="space-y-2">
-        <div class="flex items-center gap-2">
-          <Button @click="triggerFileInput">
+    <template #default>
+      <div ref="dialogBody" class="space-y-3">
+        <div class="flex items-center justify-between gap-2">
+          <Button size="sm" @click="triggerFileInput">
             <template #prefix>
               <span class="lucide-image-plus size-4" />
             </template>
             Add images
           </Button>
-          <Select
-            id="columns-select"
-            :options="columnOptions"
-            v-model="columnsModel"
-            size="sm"
-            variant="subtle"
-            class="w-28"
-          />
+          <div
+            v-if="dialog.images.value.length"
+            class="flex items-center gap-3"
+          >
+            <span class="text-p-sm text-ink-gray-5">
+              {{ dialog.images.value.length }}
+              {{ dialog.images.value.length === 1 ? 'image' : 'images' }}
+            </span>
+            <Select
+              id="columns-select"
+              :options="columnOptions"
+              v-model="columnsModel"
+              size="sm"
+              variant="subtle"
+              class="w-28"
+            />
+          </div>
         </div>
 
         <ImageGroupGrid
@@ -32,65 +39,70 @@
           :images="dialog.images.value"
           :columns="dialog.columns.value"
           @remove="onRemove"
+          @retry="onRetry"
           @update-caption="onUpdateCaption"
           @reorder="onReorder"
         />
         <div
           v-if="dialog.images.value.length"
-          class="text-p-sm text-ink-gray-5"
+          class="text-p-xs text-ink-gray-4"
         >
-          Upload more images by dropping them anywhere in this window. Reorder
-          images by dragging them. Hover over an image to edit caption.
+          Drag images to reorder · hover an image to caption or remove it ·
+          drop files anywhere to add more
         </div>
         <div
           v-else
           class="flex flex-col items-center justify-center min-h-[200px]"
         >
           <div
-            class="w-full flex flex-1 flex-col items-center justify-center border border-outline-gray-2 rounded-lg bg-surface-gray-1 h-full cursor-pointer transition hover:border-primary-400 hover:bg-primary-50 text-center"
+            class="w-full flex flex-1 flex-col items-center justify-center border border-outline-gray-2 rounded-6 bg-surface-gray-1 h-full cursor-pointer transition hover:border-outline-gray-3 hover:bg-surface-gray-2 text-center"
             @click="triggerFileInput"
           >
             <div class="text-ink-gray-4 mb-2">
               <span class="lucide-image-plus size-6" />
             </div>
-            <div class="text-ink-gray-5 text-sm font-medium">
+            <div class="text-ink-gray-5 text-sm-medium">
               Drag & drop images here or click to select
             </div>
           </div>
         </div>
 
         <div v-if="dialog.uploading.value">
-          <div class="mb-2 text-sm">
-            Uploading: {{ dialog.uploadedCount.value }}/{{
-              dialog.totalCount.value
-            }}
+          <div class="mb-2 text-sm text-ink-gray-6">
+            Uploading {{ dialog.uploadedCount.value }} of
+            {{ dialog.totalCount.value }}…
           </div>
-          <div class="w-full bg-gray-200 rounded h-2 overflow-hidden">
+          <div class="w-full bg-surface-gray-2 rounded-4 h-2 overflow-hidden">
             <div
-              class="bg-surface-gray-5 h-2 transition-all"
+              class="bg-surface-gray-8 h-2 transition-all"
               :style="{ width: dialog.uploadProgress.value + '%' }"
             ></div>
           </div>
         </div>
-        <div
+        <ErrorMessage
           v-if="dialog.hasUploadError.value"
-          class="mt-2 text-red-500 text-xs"
-        >
-          Some files failed to upload. They have been kept so you can try again.
-        </div>
+          class="mt-2"
+          message="Some images failed to upload. Retry or remove the marked images to continue."
+        />
       </div>
     </template>
     <template #actions>
       <div class="flex justify-end gap-2">
+        <Button size="sm" variant="ghost" @click="handleCancel">
+          {{ dialog.uploading.value ? 'Cancel uploads' : 'Cancel' }}
+        </Button>
         <Button
-          variant="ghost"
-          :disabled="dialog.uploading.value"
-          @click="handleCancel"
+          v-if="props.mode === 'new' && dialog.images.value.length > 1"
+          size="sm"
+          variant="subtle"
+          :loading="dialog.uploading.value"
+          @click="handleInsertSeparate"
         >
-          Cancel
+          Insert as separate images
         </Button>
         <Button
           v-if="props.mode === 'edit'"
+          size="sm"
           variant="solid"
           :loading="dialog.uploading.value"
           @click="handleSave"
@@ -99,16 +111,18 @@
         </Button>
         <Button
           v-else
+          size="sm"
           variant="solid"
+          :disabled="!dialog.images.value.length"
           :loading="dialog.uploading.value"
           @click="handleUpload"
         >
-          Upload
+          {{ insertLabel }}
         </Button>
       </div>
     </template>
   </Dialog>
-  <Teleport to="body">
+  <Teleport :to="portalTarget ?? 'body'">
     <Transition
       name="fade"
       enter-active-class="transition-opacity duration-200"
@@ -122,7 +136,7 @@
         v-if="isFileDragging"
         class="fixed inset-0 z-50 bg-gray-900/60 pointer-events-none flex items-center justify-center"
       >
-        <div class="text-ink-gray-1 text-base font-medium">
+        <div class="text-ink-gray-1 text-base-medium">
           Drop images here
         </div>
       </div>
@@ -135,6 +149,8 @@ import { computed, useTemplateRef, watch } from 'vue'
 import Dialog from '#components/Dialog/Dialog.vue'
 import Button from '#components/Button/Button.vue'
 import Select from '#components/Select/Select.vue'
+import { ErrorMessage } from '#components/ErrorMessage'
+import { usePortalTarget } from '#composables/usePortalTarget'
 import type { Editor } from '@tiptap/core'
 import { useScopedFileDrop } from '#molecules/editor/composables/useScopedFileDrop'
 import {
@@ -159,12 +175,9 @@ const props = withDefaults(
   { mode: 'new' },
 )
 
-const emit = defineEmits([
-  'update:modelValue',
-  'close',
-  'update:files',
-  'save',
-])
+const portalTarget = usePortalTarget()
+
+const emit = defineEmits(['update:modelValue', 'close', 'update:files', 'save'])
 
 const modelValue = computed({
   get: () => props.modelValue,
@@ -183,6 +196,12 @@ const columnsModel = computed({
   set: (val) => {
     dialog.columns.value = clampColumns(val)
   },
+})
+
+const insertLabel = computed(() => {
+  const count = dialog.images.value.length
+  if (count > 1) return `Insert ${count} images`
+  return 'Insert image'
 })
 
 const dialogBody = useTemplateRef<HTMLElement>('dialogBody')
@@ -261,7 +280,12 @@ function onReorder({ from, to }: { from: number; to: number }) {
   emit('update:files', dialog.reorder(from, to))
 }
 
+function onRetry(index: number) {
+  void dialog.retryImage(index)
+}
+
 function handleCancel() {
+  dialog.abortAll()
   modelValue.value = false
   emit('close')
 }
@@ -286,7 +310,28 @@ async function handleUpload() {
       .run()
   } else if (finalImages.length === 1 && !props.editor.isDestroyed) {
     const lone = finalImages[0]
-    props.editor.chain().focus().setImage({ src: lone.src, alt: lone.alt }).run()
+    props.editor
+      .chain()
+      .focus()
+      .setImage({ src: lone.src, alt: lone.alt })
+      .run()
+  }
+  modelValue.value = false
+  emit('close')
+}
+
+async function handleInsertSeparate() {
+  const finalImages = await dialog.buildFinalImages()
+  if (dialog.isUnmounted()) return
+  if (dialog.hasUploadError.value) return
+  if (!props.editor.isDestroyed) {
+    for (const image of finalImages) {
+      props.editor
+        .chain()
+        .focus()
+        .setImage({ src: image.src, alt: image.alt })
+        .run()
+    }
   }
   modelValue.value = false
   emit('close')

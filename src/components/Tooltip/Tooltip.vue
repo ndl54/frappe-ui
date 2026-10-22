@@ -15,62 +15,54 @@ defineOptions({
 
 const props = withDefaults(defineProps<TooltipProps>(), {
   text: '',
-  placement: 'top',
-  hoverDelay: 0.5,
-  arrowClass: 'fill-surface-gray-7',
+  side: 'top',
+  offset: 4,
+  hoverDelay: 500,
+  bare: false,
   disabled: false,
 })
 
-const delayDuration = computed(() => props.hoverDelay * 1000)
+const delayDuration = computed(() => props.hoverDelay)
 
 // When already inside a <TooltipProvider> (a button group), reuse that shared
 // context so the group's skip-delay spans this tooltip too, instead of
 // mounting a private provider that would isolate it.
 const parentProvider = injectTooltipProviderContext(null)
 const Passthrough: Component = (_, { slots }) => slots.default?.()
-const Provider = computed(() => (parentProvider ? Passthrough : TooltipProvider))
+const Provider = computed(() =>
+  parentProvider ? Passthrough : TooltipProvider,
+)
 const providerProps = computed(() =>
   parentProvider ? {} : { delayDuration: delayDuration.value },
 )
 
 defineSlots<{
   /**
-   * Default trigger slot.
-   * Wraps the element that the tooltip is attached to.
+   * The trigger. Tooltip is the one overlay whose `#default` is the trigger
+   * rather than the content — the shorthand `<Tooltip text="…"><Button /></Tooltip>`
+   * is the overwhelmingly common shape, and `#content` names the other half.
    */
   default?: () => any
 
-  /**
-   * Slot for fully custom tooltip body.
-   * Replaces the default tooltip container entirely.
-   */
-  body?: () => any
-
-  /**
-   * Slot for tooltip content text.
-   * Used inside the default tooltip body.
-   */
+  /** The tooltip's content. Takes precedence over `text`. */
   content?: () => any
 }>()
-
 </script>
 
 <template>
   <slot v-if="disabled" />
   <component :is="Provider" v-else v-bind="providerProps">
     <TooltipRoot>
-      <TooltipTrigger as-child>
+      <TooltipTrigger as-child data-slot="trigger">
         <slot />
       </TooltipTrigger>
       <TooltipBubble
-        v-if="props.text || $slots.body || $slots.content"
-        :side="props.placement"
+        v-if="props.text || $slots.content"
+        :side="props.side"
+        :offset="props.offset"
         :text="props.text"
-        :arrow-class="props.arrowClass"
+        :bare="props.bare"
       >
-        <template v-if="$slots.body" #body>
-          <slot name="body" />
-        </template>
         <template v-if="$slots.content" #content>
           <slot name="content" />
         </template>

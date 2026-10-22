@@ -2,6 +2,7 @@ import { reactive } from 'vue'
 import { getCacheKey, createResource } from './resources'
 import { saveLocal, getLocal } from './local'
 import { onDocUpdate } from './realtime'
+import { readSocket } from './socketAccess'
 import { getConfig } from '../utils/config'
 
 let listCache = reactive({})
@@ -220,6 +221,10 @@ export function createListResource(options, vm) {
     return out.list.fetch().finally(() => {
       out.start = _start
       out.pageLength = _pageLength
+      // list.fetch()'s onSuccess computed hasPreviousPage while start was
+      // temporarily 0 for the single-page re-fetch above; recompute now
+      // that start is back to its real value
+      out.hasPreviousPage = !!out.start
     })
   }
 
@@ -259,8 +264,9 @@ export function createListResource(options, vm) {
     return out.dataMap[key]
   }
 
-  if (options.realtime && vm?.$socket) {
-    onDocUpdate(vm.$socket, out.doctype, (name) => {
+  let socket = options.realtime ? readSocket(vm) : undefined
+  if (socket) {
+    onDocUpdate(socket, out.doctype, (name) => {
       if (out.originalData?.find((d) => d.name === name)) {
         out.fetchOne.submit(name)
       }

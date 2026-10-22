@@ -2,14 +2,13 @@
   <LabelingWrapper
     :enabled="hasLabeling"
     :wrapper-class="['space-y-1', attrs.class]"
-    :wrapper-style="attrs.style"
+    :wrapper-style="attrs.style as StyleValue"
   >
     <InputLabel
       v-if="props.label || $slots.label"
       :id="labelId"
       :label="props.label"
       :required="props.required"
-      class="text-p-sm font-medium text-ink-gray-7"
     >
       <template v-if="$slots.label" #default="slotProps">
         <slot name="label" v-bind="slotProps" />
@@ -18,15 +17,15 @@
     <div
       :id="inputId"
       ref="rootRef"
-      class="rating-stars inline-flex shrink-0 gap-0.5 leading-none rounded-sm focus:outline-none focus-visible:ring focus-visible:ring-outline-gray-3"
-      :class="hasLabeling ? null : (attrs.class as any)"
+      class="rating-stars shrink-0 gap-0.5 leading-none rounded-1"
+      :class="hasLabeling ? 'flex w-fit' : ['inline-flex', attrs.class as any]"
       :style="hasLabeling ? null : (attrs.style as any)"
       :role="isSliderMode ? 'slider' : 'radiogroup'"
       :tabindex="rootTabindex"
       :aria-labelledby="labelledBy"
       :aria-describedby="describedBy"
       :aria-errormessage="hasError ? errorMessageId : undefined"
-      :aria-required="props.required || undefined"
+      :aria-required="!isSliderMode && props.required ? true : undefined"
       :aria-invalid="hasError || undefined"
       :aria-disabled="isDisabled || undefined"
       :aria-orientation="isSliderMode ? 'horizontal' : undefined"
@@ -35,7 +34,7 @@
       :aria-valuenow="isSliderMode ? savedValue : undefined"
       :aria-valuetext="isSliderMode ? formatValue(savedValue) : undefined"
       data-slot="control"
-      v-bind="dataAttrs"
+      v-bind="{ ...dataAttrs, ...controlAttrs }"
       @mouseleave="onLeave"
       @keydown="onKeydown"
     >
@@ -43,11 +42,8 @@
         v-for="index in starCount"
         :key="index"
         type="button"
-        class="rating-star relative inline-flex shrink-0 focus:outline-none focus-visible:ring focus-visible:ring-outline-gray-3 rounded-sm"
-        :class="[
-          sizeClass,
-          isDisabled ? 'cursor-default' : 'cursor-pointer',
-        ]"
+        class="rating-star relative inline-flex shrink-0 rounded-1"
+        :class="[sizeClass, isDisabled ? 'cursor-default' : 'cursor-pointer']"
         data-slot="star"
         :data-index="index"
         :data-state="starState(index)"
@@ -133,39 +129,47 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, useAttrs, useSlots, watchEffect, nextTick } from 'vue'
+import { computed, ref, useAttrs, nextTick } from 'vue'
+import type { StyleValue } from 'vue'
+import { resolvePropValue } from '../../utils/resolvePropValue'
 import { useInputLabeling } from '../../composables/useInputLabeling'
-import { warnDeprecated } from '../../utils/warnDeprecated'
+import { useReactiveSlots } from '../../composables/useReactiveSlots'
 import InputLabel from '../InputLabeling/InputLabel.vue'
 import InputDescription from '../InputLabeling/InputDescription.vue'
 import InputError from '../InputLabeling/InputError.vue'
 import LabelingWrapper from '../InputLabeling/LabelingWrapper.vue'
-import LucideStar from '~icons/lucide/star'
+import RatingStar from './RatingStar.vue'
+import type { InputSize } from '../../composables/inputTypes'
 import type { RatingProps, RatingIconSlotProps } from './types'
+import type { InputExposed } from '../../composables/inputTypes'
+
+// INP-Q6: `class` and `style` land on the labeling wrapper (or on the control
+// when there is no wrapper); every other attribute and listener goes once to
+// the control. Without this, Vue also applied the whole set to the wrapper.
+defineOptions({ inheritAttrs: false })
 
 const props = withDefaults(defineProps<RatingProps>(), {
-  size: 'md',
+  // INP-Q16: `sm` matches every other input's default. `md` made an omitted
+  // size the odd one out, and an invalid size now resolves to `sm` too.
+  size: 'sm',
   disabled: false,
   step: 1,
-  icon: () => LucideStar,
+  icon: () => RatingStar,
 })
 
 const model = defineModel<number>({ default: 0 })
-const slots = useSlots()
+const slots = useReactiveSlots<typeof declaredSlots>()
 const attrs = useAttrs()
 
-watchEffect(() => {
-  if (props.rating_from != null) {
-    warnDeprecated('Rating.rating_from', 'max')
-  }
-  if (props.readonly === true) {
-    warnDeprecated('Rating.readonly', 'disabled')
-  }
-})
+const controlAttrs = computed(() =>
+  Object.fromEntries(
+    Object.entries(attrs).filter(([key]) => key !== 'class' && key !== 'style'),
+  ),
+)
 
-const isDisabled = computed(() => props.disabled || props.readonly === true)
+const isDisabled = computed(() => props.disabled)
 
-defineSlots<{
+const declaredSlots = defineSlots<{
   /** Overrides the rendered label content. Receives `{ required }`. */
   label?: (props: { required: boolean }) => any
   /** Overrides the rendered description content. */
@@ -178,7 +182,7 @@ defineSlots<{
   icon?: (props: RatingIconSlotProps) => any
 }>()
 
-const starCount = computed(() => props.max ?? props.rating_from ?? 5)
+const starCount = computed(() => props.max ?? 5)
 const isSliderMode = computed(() => props.step === 0.5)
 
 const hoveredValue = ref<number | null>(null)
@@ -195,20 +199,27 @@ const {
   hasError,
   errorLines,
   showDescription,
+  rendersDescription,
   dataAttrs,
 } = useInputLabeling(props, {
   size: () => props.size,
   disabled: () => isDisabled.value,
+  hasLabelSlot: () => Boolean(slots.label),
+  hasDescriptionSlot: () => Boolean(slots.description),
 })
 
-const sizeClass = computed(
-  () =>
-    ({
-      sm: 'size-4',
-      md: 'size-5',
-      lg: 'size-6',
-      xl: 'size-7',
-    })[props.size],
+const starSizeMap: Record<InputSize, string> = {
+  xs: 'size-3.5',
+  sm: 'size-4',
+  md: 'size-5',
+  lg: 'size-6',
+}
+
+const sizeClass = computed(() =>
+  resolvePropValue(starSizeMap, props.size, 'sm', {
+    component: 'Rating',
+    prop: 'size',
+  }),
 )
 
 function roundToStep(v: number) {
@@ -390,13 +401,32 @@ function onKeydown(e: KeyboardEvent) {
   }
 }
 
+// INP-Q15: focus goes to the selected star, or to the first star when nothing
+// is selected — the same element `starTabindex` already makes the single
+// tabstop, so a ref call and a Tab press land in the same place. In slider mode
+// the root itself is the tabstop.
+defineExpose<InputExposed>({
+  /**
+   * Moves focus to the selected star, or to the first star when nothing is
+   * selected. That is the star `Tab` reaches. In half-star mode the whole
+   * control is one slider, so it focuses the control itself.
+   */
+  focus: (options?: FocusOptions) => {
+    const root = rootRef.value
+    if (!root) return
+    if (isSliderMode.value) {
+      root.focus(options)
+      return
+    }
+    const selected = Math.ceil(savedValue.value)
+    const target = selected > 0 ? selected : 1
+    root.querySelector<HTMLElement>(`[data-index="${target}"]`)?.focus(options)
+  },
+})
+
 const hasLabeling = computed(() => {
   return Boolean(
-    props.label ||
-    slots.label ||
-    showDescription.value ||
-    slots.description ||
-    hasError.value,
+    props.label || slots.label || rendersDescription.value || hasError.value,
   )
 })
 </script>

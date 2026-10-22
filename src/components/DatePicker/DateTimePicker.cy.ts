@@ -1,6 +1,10 @@
 import { h } from 'vue'
+import { dayjs } from '../../utils/dayjs'
 import DateTimePicker from './DateTimePicker.vue'
-import type { DateTimePickerActionsSlotProps } from './types'
+import type {
+  DateTimePickerActionsSlotProps,
+  DatePickerTriggerSlotProps,
+} from './types'
 
 const clearSlot = {
   actions: (props: DateTimePickerActionsSlotProps) =>
@@ -35,12 +39,41 @@ describe('DateTimePicker', () => {
     cy.get('[aria-label=cycle-calendar-view]').should('exist')
   })
 
-  it('Now button selects current date and time', () => {
-    cy.mount(DateTimePicker)
+  it('Now button selects current date and time, and closes', () => {
+    cy.mount(DateTimePicker, {
+      props: { 'onUpdate:modelValue': cy.spy().as('onUpdate') },
+    })
     cy.get('input').first().dblclick()
     cy.get('[role=dialog]').should('exist')
     cy.get('[aria-label="Now"]').click()
+    cy.get('[role=dialog]').should('not.exist')
     cy.get('input').first().should('not.have.value', '')
+    cy.get('@onUpdate').then((spy) => {
+      // One press, one emit — no transient midnight value on the way.
+      expect((spy as any).callCount).to.equal(1)
+      const emitted = (spy as any).lastCall.args[0] as string
+      // The current time, not the midnight a plain date selection would give.
+      expect(dayjs(emitted).diff(dayjs(), 'minute')).to.be.closeTo(0, 1)
+    })
+  })
+
+  it('Now emits once with the current time when today is already selected', () => {
+    const today = dayjs().format('YYYY-MM-DD')
+    cy.mount(DateTimePicker, {
+      props: {
+        modelValue: `${today} 00:00:00`,
+        'onUpdate:modelValue': cy.spy().as('onUpdate'),
+      },
+    })
+    cy.get('input').first().dblclick()
+    cy.get('[aria-label="Now"]').click()
+    cy.get('[role=dialog]').should('not.exist')
+    cy.get('@onUpdate').then((spy) => {
+      expect((spy as any).callCount).to.equal(1)
+      const emitted = (spy as any).lastCall.args[0] as string
+      expect(emitted.startsWith(today)).to.equal(true)
+      expect(dayjs(emitted).diff(dayjs(), 'minute')).to.be.closeTo(0, 1)
+    })
   })
 
   it('Clear from #actions slot resets the value', () => {
@@ -63,8 +96,16 @@ describe('DateTimePicker', () => {
       },
     })
     cy.get('input').first().dblclick()
-    cy.get('[aria-label="2025-06-09"]').should('have.attr', 'aria-disabled', 'true')
-    cy.get('[aria-label="2025-06-21"]').should('have.attr', 'aria-disabled', 'true')
+    cy.get('[aria-label="2025-06-09"]').should(
+      'have.attr',
+      'aria-disabled',
+      'true',
+    )
+    cy.get('[aria-label="2025-06-21"]').should(
+      'have.attr',
+      'aria-disabled',
+      'true',
+    )
     cy.get('[aria-label="2025-06-15"]').should('not.have.attr', 'aria-disabled')
   })
 
@@ -148,19 +189,6 @@ describe('DateTimePicker', () => {
       .should('match', /^12[:0]/)
   })
 
-  it('back-compat: minDateTime/maxDateTime still constrain selection', () => {
-    cy.mount(DateTimePicker, {
-      props: {
-        modelValue: '2025-06-15 14:00:00',
-        minDateTime: '2025-06-10 00:00:00',
-        maxDateTime: '2025-06-20 23:59:59',
-      },
-    })
-    cy.get('input').first().dblclick()
-    cy.get('[aria-label="2025-06-09"]').should('have.attr', 'aria-disabled', 'true')
-    cy.get('[aria-label="2025-06-21"]').should('have.attr', 'aria-disabled', 'true')
-  })
-
   describe('keyboard navigation', () => {
     it('arrow-down on the input opens popover and focuses selected cell', () => {
       cy.mount(DateTimePicker, { props: { modelValue: '2025-06-15 12:00:00' } })
@@ -184,10 +212,185 @@ describe('DateTimePicker', () => {
     })
   })
 
-  it('cycle-calendar-view button switches to month view', () => {
+  it('cycle-calendar-view button opens the month-year split view', () => {
     cy.mount(DateTimePicker)
     cy.get('input').first().dblclick()
     cy.get('[aria-label=cycle-calendar-view]').click()
-    cy.get('[role=grid][aria-label="Select month"]').should('exist')
+    // Split view: scrollable year list beside a scrollable month list.
+    cy.get('[role=listbox][aria-label="Select year"]').should('exist')
+    cy.get('[role=listbox][aria-label="Select month"]').should('exist')
+  })
+
+  // `open` and `setOpen` are the public slot contract, so a rename here is a
+  // silent break in consumer templates. Popover carries the same test.
+  it('exposes open and setOpen to the #trigger slot', () => {
+    cy.mount(DateTimePicker, {
+      props: { modelValue: '2025-06-15 10:30:00' },
+      slots: {
+        trigger: ({ open, setOpen }: DatePickerTriggerSlotProps) =>
+          h(
+            'button',
+            {
+              'data-cy': 'trigger',
+              class: open ? 'is-open' : 'is-closed',
+              onClick: () => setOpen(!open),
+            },
+            open ? 'Close' : 'Open',
+          ),
+      },
+    })
+
+    cy.get('[data-cy="trigger"]')
+      .should('have.class', 'is-closed')
+      .and('have.text', 'Open')
+    cy.get('[role=dialog]').should('not.exist')
+
+    cy.get('[data-cy="trigger"]').click()
+    cy.get('[role=dialog]').should('exist')
+    cy.get('[data-cy="trigger"]')
+      .should('have.class', 'is-open')
+      .and('have.text', 'Close')
+  })
+
+  // INP-Q5 (ADR-0012).
+  describe('template ref', () => {
+    it('open(), close() and focus() drive the picker', () => {
+      let vm: any
+      cy.mount(DateTimePicker).then((mounted: any) => {
+        vm = mounted.component ?? mounted.wrapper?.vm ?? mounted
+      })
+
+      cy.get('[role=dialog]').should('not.exist')
+      cy.then(() => vm?.open?.())
+      cy.get('[role=dialog]').should('exist')
+      cy.then(() => vm?.close?.())
+      cy.get('[role=dialog]').should('not.exist')
+
+      cy.then(() => vm?.focus?.())
+      cy.get('input').first().should('be.focused')
+    })
+  })
+
+  // A parent that mounts a picker with `open` already true gets an open panel.
+  // The prop is only watched for changes, so the initial value used to be
+  // dropped (plans/001, step 1).
+  describe('initial open state', () => {
+    it('mounts open when `open` starts true', () => {
+      cy.mount(DateTimePicker, {
+        props: { modelValue: '2025-06-15 10:30:00', open: true },
+      })
+
+      cy.get('[role=dialog]').should('exist')
+      // The panel shows the bound date and time, not an unseeded month.
+      cy.get('[aria-label=cycle-calendar-view]').should('have.text', 'Jun 2025')
+      cy.get('[aria-label="2025-06-15"]').should(
+        'have.attr',
+        'aria-selected',
+        'true',
+      )
+      cy.get('input').first().should('have.value', '2025-06-15 10:30:00')
+      // The nested TimePicker holds the time half of the value.
+      cy.get('input').eq(1).should('have.value', '10:30')
+      // A panel that is merely displayed is not open: the trigger has to point
+      // at it too.
+      cy.get('input').first().should('have.attr', 'aria-expanded', 'true')
+      cy.get('input')
+        .first()
+        .invoke('attr', 'aria-controls')
+        .should('be.a', 'string')
+        .then((panelId) => {
+          cy.get(`#${panelId}`).should('have.attr', 'role', 'dialog')
+        })
+    })
+
+    it('stays closed when `open` starts false', () => {
+      cy.mount(DateTimePicker, {
+        props: { modelValue: '2025-06-15 10:30:00', open: false },
+      })
+      cy.get('[role=dialog]').should('not.exist')
+      cy.get('input').first().should('have.attr', 'aria-expanded', 'false')
+    })
+
+    it('stays closed when `open` is omitted', () => {
+      cy.mount(DateTimePicker, {
+        props: { modelValue: '2025-06-15 10:30:00' },
+      })
+      cy.get('[role=dialog]').should('not.exist')
+    })
+
+    it('follows the parent from false to true and back', () => {
+      cy.mount(DateTimePicker, {
+        props: { modelValue: '2025-06-15 10:30:00', open: false },
+      }).then(({ wrapper }) => {
+        cy.get('[role=dialog]').should('not.exist')
+        cy.then(() => wrapper.setProps({ open: true }))
+        cy.get('[role=dialog]').should('exist')
+        cy.then(() => wrapper.setProps({ open: false }))
+        cy.get('[role=dialog]').should('not.exist')
+      })
+    })
+
+    it('still opens from the trigger with no `open` bound', () => {
+      cy.mount(DateTimePicker, {
+        props: { modelValue: '2025-06-15 10:30:00' },
+      })
+      cy.get('input').first().click()
+      cy.get('[role=dialog]').should('exist')
+    })
+
+    it('emits no `update:open` while mounting open', () => {
+      cy.mount(DateTimePicker, {
+        props: {
+          modelValue: '2025-06-15 10:30:00',
+          open: true,
+          'onUpdate:open': cy.spy().as('onUpdateOpen'),
+        },
+      })
+
+      cy.get('[role=dialog]').should('exist')
+      cy.get('@onUpdateOpen').should('not.have.been.called')
+
+      // The first emit is the picker's own close, so nothing looped on mount.
+      cy.get('[aria-label="Now"]').click()
+      cy.get('[role=dialog]').should('not.exist')
+      cy.get('@onUpdateOpen').should('have.been.calledOnceWith', false)
+    })
+
+    // Mounting open follows no gesture, so nothing inside the panel takes
+    // focus — the default trigger does not either.
+    it('moves no focus into the panel when mounting open with a custom #trigger', () => {
+      cy.mount(DateTimePicker, {
+        props: { modelValue: '2025-06-15 10:30:00', open: true },
+        slots: {
+          trigger: () => h('button', { 'data-cy': 'pick' }, 'Pick'),
+        },
+      })
+
+      cy.get('[role=dialog]').should('exist')
+      cy.get('[aria-label="2025-06-15"]').should('exist')
+      cy.document().then((doc) => {
+        expect(
+          (doc.activeElement as HTMLElement | null)?.closest('[role=dialog]'),
+        ).to.equal(null)
+      })
+    })
+
+    it('moves focus into the calendar on a later open from a custom #trigger', () => {
+      cy.mount(DateTimePicker, {
+        props: { modelValue: '2025-06-15 10:30:00' },
+        slots: {
+          trigger: ({ open, setOpen }: DatePickerTriggerSlotProps) =>
+            h(
+              'button',
+              { 'data-cy': 'pick', onClick: () => setOpen(!open) },
+              'Pick',
+            ),
+        },
+      })
+
+      cy.get('[data-cy=pick]').click()
+      cy.get('[role=dialog]').should('exist')
+      cy.focused().should('have.attr', 'data-value', '2025-06-15')
+    })
   })
 })

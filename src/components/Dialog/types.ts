@@ -1,4 +1,6 @@
+import type { Component } from 'vue'
 import type { ButtonProps } from '../Button'
+import type { Action } from '../shared/action'
 
 export type DialogSize =
   | 'xs'
@@ -13,42 +15,18 @@ export type DialogSize =
   | '6xl'
   | '7xl'
 
-export type DialogTheme = 'yellow' | 'blue' | 'red' | 'green'
+export type DialogTheme = 'amber' | 'blue' | 'red' | 'green'
 
 export type DialogPosition = 'center' | 'top'
-
-/** Legacy icon appearance — replaced by `theme`. */
-export type DialogIconAppearance = 'warning' | 'info' | 'danger' | 'success'
-
-export type DialogIcon = {
-  name: string
-  /** Color tone. Replaces deprecated `appearance`. */
-  theme?: DialogTheme
-  /** @deprecated Use `theme` instead. */
-  appearance?: DialogIconAppearance
-}
 
 export type DialogActionContext = {
   close: () => void
 }
 
-export type DialogAction = ButtonProps & {
-  onClick?: (context: DialogActionContext) => void | Promise<void>
-}
+export type DialogAction = Action<DialogActionContext>
 
 /** A `DialogAction` augmented with a reactive `loading` flag, as surfaced to the `#actions` slot. */
 export type DialogReactiveAction = DialogAction & { loading: boolean }
-
-/** Legacy blob — accepted for back-compat, warns once. */
-export type DialogOptions = {
-  title?: string
-  message?: string
-  size?: DialogSize
-  icon?: string | DialogIcon
-  actions?: DialogAction[]
-  position?: DialogPosition
-  paddingTop?: string | number
-}
 
 export interface DialogProps {
   // Visibility — both supported, `open` is canonical.
@@ -65,8 +43,17 @@ export interface DialogProps {
   /** Description text rendered below the title. */
   message?: string
 
-  /** Icon shown next to the title in the auto-header. */
-  icon?: string | DialogIcon
+  /**
+   * Icon shown next to the title in the auto-header. A `lucide-*` class name
+   * or a Vue component. Its badge takes its tone from `theme`.
+   */
+  icon?: string | Component
+
+  /**
+   * Tone of the header icon badge: `amber`, `blue`, `red` or `green`.
+   * Unset renders the neutral gray badge.
+   */
+  theme?: DialogTheme
 
   // Layout.
   /** Max-width size of the dialog. Default `'lg'`. */
@@ -91,13 +78,6 @@ export interface DialogProps {
 
   /** Drop the chrome: no padded card, no auto-header, no auto-actions. Default `false`. */
   bare?: boolean
-
-  // Deprecated.
-  /** @deprecated Use `dismissible` (inverted) instead. */
-  disableOutsideClickToClose?: boolean
-
-  /** @deprecated Use flat top-level props instead. */
-  options?: DialogOptions
 }
 
 export interface DialogEmits {
@@ -126,11 +106,6 @@ export interface DialogActionsSlotProps extends DialogSlotProps {
   actions: DialogReactiveAction[]
 }
 
-export interface DialogExposed {
-  /** Closes the dialog. */
-  close: () => void
-}
-
 export interface DialogSlots {
   /** Main content rendered inside the padded card. Exposes `{ close }`. */
   default?: (props: DialogSlotProps) => any
@@ -140,19 +115,4 @@ export interface DialogSlots {
 
   /** Footer override; exposes `{ close, actions }`. */
   actions?: (props: DialogActionsSlotProps) => any
-
-  /** @deprecated Use `#default` + `bare` prop. */
-  body?: () => any
-
-  /** @deprecated Use `#default`. */
-  'body-main'?: () => any
-
-  /** @deprecated Use `#title` for extras (no direct replacement). */
-  'body-header'?: () => any
-
-  /** @deprecated Use `#title`. */
-  'body-title'?: () => any
-
-  /** @deprecated Use `#default`. */
-  'body-content'?: () => any
 }

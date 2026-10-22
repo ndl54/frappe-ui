@@ -1,5 +1,7 @@
 import type { Editor, Range } from '@tiptap/core'
+import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import type { EditorState } from '@tiptap/pm/state'
+import { rankMatch } from '#utils/rankMatch'
 
 /**
  * Shared helpers for slash/emoji/mention/tag suggesters: DRY node-insertion,
@@ -26,7 +28,8 @@ export function insertSuggestionNode(
 ): void {
   const { trailingSpace = true } = opts
   const content: Array<
-    { type: string; attrs: Record<string, unknown> } | { type: 'text'; text: string }
+    | { type: string; attrs: Record<string, unknown> }
+    | { type: 'text'; text: string }
   > = [{ type: nodeType, attrs }]
   if (trailingSpace) {
     content.push({ type: 'text', text: ' ' })
@@ -47,6 +50,14 @@ export function filterByQuery<T>(items: T[], query: string, key: keyof T): T[] {
   })
 }
 
+/** `filterByQuery` in `rankMatch` order: best match first, ties keep input order. */
+export function rankByQuery<T>(items: T[], query: string, key: keyof T): T[] {
+  return filterByQuery(items, query, key).sort(
+    (a, b) =>
+      rankMatch(String(a[key]), query) - rankMatch(String(b[key]), query),
+  )
+}
+
 /**
  * True when `pos` sits inside a code context — either a code-block node or text
  * carrying the inline `code` mark. Suggesters (`@`/`#`/`:`) use this to stay
@@ -56,13 +67,18 @@ export function filterByQuery<T>(items: T[], query: string, key: keyof T): T[] {
  * Detection is structural: code-block nodes carry `spec.code === true`, and
  * inline code is a mark — so we walk the resolved ancestors for the former and
  * test the position's mark set for the latter.
+ *
+ * Takes the doc rather than the state so a caller mid-transaction can pass
+ * `tr.doc` and resolve a fresh position against the doc it belongs to. Passing
+ * `state.doc` with a position from a `tr` that has already edited the doc can
+ * resolve past the end and throw.
  */
-export function isInCode(state: EditorState, pos: number): boolean {
-  const $pos = state.doc.resolve(pos)
+export function isInCode(doc: ProseMirrorNode, pos: number): boolean {
+  const $pos = doc.resolve(pos)
   for (let depth = $pos.depth; depth > 0; depth--) {
     if ($pos.node(depth).type.spec.code) return true
   }
-  const codeMark = state.schema.marks.code
+  const codeMark = doc.type.schema.marks.code
   return codeMark ? codeMark.isInSet($pos.marks()) != null : false
 }
 

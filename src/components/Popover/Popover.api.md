@@ -3,100 +3,109 @@
   import PropsTable from '@/components/Docs/PropsTable.vue'
   import SlotsTable from '@/components/Docs/SlotsTable.vue'
   import EmitsTable from '@/components/Docs/EmitsTable.vue'
+  import ExposedTable from '@/components/Docs/ExposedTable.vue'
 
   const propsData = [
   {
-    name: 'show',
-    description: 'Controls visibility of the popover',
+    name: 'open',
+    description: 'Controls visibility (v-model:open).',
     required: false,
-    type: 'boolean',
-    default: 'undefined'
+    type: 'boolean'
   },
   {
-    name: 'trigger',
-    description: 'Event that triggers the popover',
+    name: 'side',
+    description: 'Side of the trigger to render the content on.',
     required: false,
-    type: '"click" | "hover"',
-    default: '"click"'
+    type: 'PopoverSide',
+    default: '"bottom"'
   },
   {
-    name: 'hoverDelay',
-    description: 'Delay in ms before showing popover on hover',
+    name: 'align',
+    description: 'Alignment of the content along the chosen side.',
+    required: false,
+    type: 'PopoverAlign',
+    default: '"start"'
+  },
+  {
+    name: 'offset',
+    description: 'Distance in px between the trigger and the content.',
     required: false,
     type: 'number',
-    default: '0'
+    default: '4'
   },
   {
-    name: 'leaveDelay',
-    description: 'Delay in ms before hiding popover on hover leave',
+    name: 'portalTo',
+    description: 'Where to portal the content. Unset, an embedding host\'s target is used, else `body`.',
+    required: false,
+    type: 'PortalTarget'
+  },
+  {
+    name: 'collisionPadding',
+    description: 'Padding in px kept from the viewport edge during collision handling.',
     required: false,
     type: 'number',
-    default: '0.5'
+    default: '10'
   },
   {
-    name: 'placement',
-    description: 'Placement of the popover relative to the target',
-    required: false,
-    type: '"bottom" | "top" | "right" | "left" | "top-start" | "top-end" | "bottom-start" | "bottom-end" | "right-start" | "right-end" | "left-start" | "left-end"',
-    default: '"bottom-start"'
-  },
-  {
-    name: 'popoverClass',
-    description: '',
-    required: false,
-    type: 'string | object | (string | object)[]',
-    default: '""'
-  },
-  {
-    name: 'transition',
-    description: 'Transition style to use',
-    required: false,
-    type: '"default" | null',
-    default: 'null'
-  },
-  {
-    name: 'hideOnBlur',
-    description: 'Whether to hide the popover when clicking outside',
+    name: 'dismissible',
+    description: 'Whether the popover closes on outside interaction (click/focus).',
     required: false,
     type: 'boolean',
     default: 'true'
   },
   {
-    name: 'matchTargetWidth',
-    description: 'Whether the popover width should match the target element',
+    name: 'autoFocus',
+    description: 'Whether the content takes focus when it opens. Set to `false` when typing\nin the trigger drives the panel, so the caret stays in the input.\nDefault: `true`.',
     required: false,
-    type: 'boolean'
+    type: 'boolean',
+    default: 'true'
   },
   {
-    name: 'offset',
-    description: '',
+    name: 'trigger',
+    description: 'What opens the popover. `click` toggles it from the trigger element.\n`manual` does nothing on click; only `v-model:open` opens and closes it.\nIn `manual` mode the trigger gets no `aria-expanded` or `aria-controls`.\nDefault: `click`.',
     required: false,
-    type: 'number'
+    type: '"click" | "manual"',
+    default: '"click"'
   },
   {
-    name: 'collisionPadding',
-    description: '',
+    name: 'reference',
+    description: 'Element to position the content against, instead of the trigger. Use it\nwhen the trigger is a labelled field, so the panel sits under the input row\nrather than under the description.',
     required: false,
-    type: 'number',
-    default: '10'
+    type: 'Element'
+  },
+  {
+    name: 'matchTriggerWidth',
+    description: 'Whether the content\'s min-width matches the trigger width.',
+    required: false,
+    type: 'boolean',
+    default: 'false'
+  },
+  {
+    name: 'bare',
+    description: 'Render `#default` without the panel shell (no background, border, shadow,\nor rounding). The content brings its own surface. Mirrors Dialog\'s `bare`.',
+    required: false,
+    type: 'boolean',
+    default: 'false'
+  },
+  {
+    name: 'arrow',
+    description: 'Render a small arrow pointing at the trigger. Styled to match the panel\nsurface.',
+    required: false,
+    type: 'boolean',
+    default: 'false'
   }
 ]
 
   const slotsData = [
   {
-    name: 'target',
-    description: 'Content of the trigger/anchor element',
-    type: '{ togglePopover: () => void; updatePosition: () => void; open: () => void; close: () => void; isOpen'
+    name: 'trigger',
+    description: 'Trigger element. Rendered via reka PopoverTrigger as-child.',
+    type: 'PopoverSlotProps'
   },
   {
-    name: 'body',
-    description: 'Main content of the popover body',
-    type: '{ togglePopover: () => void; updatePosition: () => void; open: () => void; close: () => void; isOpen'
-  },
-  {
-    name: 'body-main',
-    description: 'Inner content inside the default body container',
-    type: '{ togglePopover: () => void; updatePosition: () => void; open: () => void; close: () => void; isOpen'
+    name: 'default',
+    description: 'Popover content, rendered inside the shared panel shell unless `bare`.',
+    type: 'PopoverSlotProps'
   }
 ]
 
@@ -107,8 +116,8 @@
     type: '[]'
   },
   {
-    name: 'update:show',
-    description: 'Fired when the show changes.',
+    name: 'update:open',
+    description: 'Fired when the open state changes.',
     type: '[value: boolean]'
   },
   {
@@ -117,12 +126,32 @@
     type: '[]'
   }
 ]
+
+  const exposedData = [
+  {
+    name: 'open',
+    description: 'Opens the popover. Does nothing when it is already open.',
+    type: '() => void'
+  },
+  {
+    name: 'close',
+    description: 'Closes the popover. Does nothing when it is already closed.',
+    type: '() => void'
+  },
+  {
+    name: 'contentEl',
+    description: 'The content element. `null` while the popover is closed.',
+    type: 'HTMLElement | null'
+  }
+]
 </script>
+
 ## API Reference
 
-<PropsTable name="Popover" :data="propsData"/> 
+<PropsTable name="Popover" :data="propsData"/>
 
-<SlotsTable :data="slotsData"/> 
+<SlotsTable :data="slotsData"/>
 
-<EmitsTable :data="emitsData"/> 
+<EmitsTable :data="emitsData"/>
 
+<ExposedTable :data="exposedData"/>

@@ -1,129 +1,220 @@
-// old data-fetching: resources
-export * from './resources/index.ts'
+// The package's public surface. `export *` is allowed only from a curated
+// barrel — an `index.ts` whose export list was reviewed — never from an
+// implementation module, where it publishes whatever that file happens to
+// export next. See PHILOSOPHY.md, P15.
 
-// components
+// App setup and plugins
+export { default as FrappeUI } from './utils/plugin'
+export { FrappeUIProvider } from './components/FrappeUIProvider'
+export { getConfig, setConfig } from './utils/config'
+export type { FrappeUIConfig } from './utils/config'
+
+// Data fetching
+export * from './data-fetching'
+// v1 resource API. Supported and frozen through 1.x, un-deprecated — see #886
+// and ADR-0013 (implementation stays JS; no changes to internal code).
+export * from './resources/index.ts'
+// One HTTP transport. `request` stays internal — it is the bare fetch wrapper
+// `frappeRequest` and the v1 resources are built on, with none of the Frappe
+// response handling a consumer wants.
+export { default as call } from './utils/call'
+export { frappeRequest, type FrappeResourceError } from './utils/frappeRequest'
+
+// Base components
 export * from './components/Alert'
-export * from './components/Autocomplete'
 export * from './components/Avatar'
 export * from './components/Badge'
+export * from './components/BottomSheet'
 export * from './components/Breadcrumbs'
 export * from './components/Button'
-export { default as Card } from './components/Card.vue'
+export * from './components/Divider'
+export * from './components/Icon'
+export * from './components/LoadingIndicator'
+export * from './components/LoadingText'
+export * from './components/Progress'
+export * from './components/Rating'
+export * from './components/Skeleton'
+export * from './components/Spinner'
+export * from './components/Tooltip'
+
+// Form controls
 export * from './components/Checkbox'
 export * from './components/Combobox'
 export * from './components/DatePicker'
-export * from './components/Dialog'
-export { default as Dialogs } from './components/Dialogs.vue'
-export * from './components/Divider'
-export * from './components/Dropdown'
+export * from './components/Duration'
 export * from './components/ErrorMessage'
-export { default as FeatherIcon } from './components/FeatherIcon.vue'
 export * from './components/FileUploader'
 export * from './components/FormControl'
-export * from './components/ImageViewer'
-export { default as FormLabel } from './components/FormLabel.vue'
-export { default as Input } from './components/Input.vue'
-export * from './components/ItemListRow'
-export { default as ListItem } from './components/ListItem.vue'
-export { default as ListEmptyState } from './components/ListView/ListEmptyState.vue'
-export { default as ListFooter } from './components/ListView/ListFooter.vue'
-export { default as ListGroupHeader } from './components/ListView/ListGroupHeader.vue'
-export { default as ListGroupRows } from './components/ListView/ListGroupRows.vue'
-export { default as ListGroups } from './components/ListView/ListGroups.vue'
-export { default as ListHeader } from './components/ListView/ListHeader.vue'
-export { default as ListHeaderItem } from './components/ListView/ListHeaderItem.vue'
-export { default as ListRow } from './components/ListView/ListRow.vue'
-export { default as ListRowItem } from './components/ListView/ListRowItem.vue'
-export { default as ListRows } from './components/ListView/ListRows.vue'
-export { default as ListSelectBanner } from './components/ListView/ListSelectBanner.vue'
-export {
-  default as List,
-  default as ListView,
-} from './components/ListView/ListView.vue'
-export { default as LoadingIndicator } from './components/LoadingIndicator.vue'
-export { default as LoadingText } from './components/LoadingText.vue'
-export * from './components/MonthPicker'
+export * from './components/FormLabel'
 export * from './components/MultiSelect'
 export * from './components/Password'
-export * from './components/Popover'
-export * from './components/Progress'
-export * from './components/Rating'
-export { default as Resource } from './components/Resource.vue'
+export * from './components/Radio'
 export * from './components/Select'
+// Shared by Select / MultiSelect / Combobox, so it belongs to the family
+// rather than to any one of their barrels.
+export type {
+  SelectionExposed,
+  SelectionGroup,
+  SelectionOption,
+} from './components/shared/selection/types'
+export type { StatusTheme } from './components/shared/statusIcon'
 export * from './components/Slider'
-export * from './components/Spinner'
 export * from './components/Switch'
-export * from './components/TabButtons'
-export { default as Tabs } from './components/Tabs/Tabs.vue'
 export * from './components/Textarea'
-export * from './components/TextEditor'
 export * from './components/TextInput'
 export * from './components/TimePicker'
+
+// Dialogs, menus, and feedback
+export * from './components/ContextMenu'
+export * from './components/Dialog'
+export { default as Dialogs } from './components/Dialogs.vue'
+export * from './components/Dropdown'
+export * from './components/HoverCard'
+export * from './components/Popover'
 export {
   dialog,
   type ConfirmArgs,
-  type ConfirmResult,
+  type DangerArgs,
+  type DialogControl,
+  type DialogHandle,
   type DialogNamespace,
+  type ImperativeDialogAction,
   type PromptArgs,
+  type PromptControl,
   type PromptField,
-  type PromptResult,
+  type PromptFieldValidator,
 } from './utils/dialog'
-/** @deprecated Use the imperative `toast(...)` API instead. The `<Toast />` SFC will be removed in a future major. */
-export { default as Toast } from './components/Toast/Toast.vue'
 export { toast } from './components/Toast/toast'
+export type {
+  ToastAction,
+  ToastId,
+  ToastOptions,
+} from './components/Toast/types'
 export { default as ToastProvider } from './components/Toast/ToastProvider.vue'
-export * from './components/Tooltip'
-export { default as CommandPalette } from './components/CommandPalette/CommandPalette.vue'
-export { default as CommandPaletteItem } from './components/CommandPalette/CommandPaletteItem.vue'
-export { default as ListFilter } from './components/ListFilter/ListFilter.vue'
-export { default as NestedPopover } from './components/ListFilter/NestedPopover.vue'
-export { default as KeyboardShortcut } from './components/KeyboardShortcut.vue'
-export * from './components/KeyboardShortcutsModal'
-export * from './composables/useShortcut'
-export * from './components/Calendar'
-export * from './components/CircularProgressBar'
+
+// Lists and collection views
+export * from './components/ItemListRow'
+// ListView family moved to `frappe-ui/experimental` (#985, P14) — it stays
+// there, unstable, until `frappe-ui/list` reaches functional parity. See
+// v1-release/plan.md's ListView row.
+// Calendar family moved to `frappe-ui/experimental` (#1020, P14) — parked
+// there, API unchanged, until a redesigned calendar family replaces it.
 export * from './components/Tree'
-export { default as FrappeUIProvider } from './components/Provider/FrappeUIProvider.vue'
+
+// Navigation and layout
+export * from './components/DesktopShell/index.ts'
+export * from './components/MobileNav/index.ts'
+export * from './components/MobileShell/index.ts'
+export * from './components/PageHeader'
+export * from './components/ScrollArea'
+export * from './components/SettingsDialog'
 export * from './components/Sidebar/index.ts'
-export { default as ConfirmDialog } from './components/ConfirmDialog.vue'
+export * from './components/SidebarRail'
+export * from './components/TabButtons'
+export * from './components/Tabs'
 
-// grid layout
-export { default as GridLayout } from './components/VueGridLayout/Layout.vue'
+// Command and keyboard surfaces
+// CommandPalette left the root export in `1.0.0` (P14). It is rebuilt as a
+// seven-part family in `frappe-ui/experimental`, where the API can still
+// change.
+export * from './components/KeyboardShortcut'
+export * from './components/KeyboardShortcutsDialog'
+export {
+  useKeyboardShortcut,
+  type HoldKeyboardShortcutConfig,
+  type KeyboardShortcutCombo,
+  type KeyboardShortcutConfig,
+  type KeyboardShortcutEntry,
+  type KeyboardShortcutGroup,
+  type KeyboardShortcutKey,
+  type PressKeyboardShortcutConfig,
+} from './composables/useKeyboardShortcut'
 
-// chart components
-export { default as AxisChart } from './components/Charts/AxisChart.vue'
-export { default as useAxisChartOptions } from './components/Charts/axisChartOptions'
-export { default as DonutChart } from './components/Charts/DonutChart.vue'
-export { default as ECharts } from './components/Charts/ECharts.vue'
-export { default as FunnelChart } from './components/Charts/FunnelChart.vue'
-export { default as NumberChart } from './components/Charts/NumberChart.vue'
+// ThemeSwitcher moved to `frappe-ui/experimental` (#1094, P14) — parked
+// there, deprecated, while apps move to `Select` plus `useColorScheme`.
 
-// directives
-export { default as focusDirective } from './directives/focus'
-export { default as onOutsideClickDirective } from './directives/onOutsideClick'
-export { default as visibilityDirective } from './directives/visibility'
+// v1 Charts family moved to `frappe-ui/experimental` (#942, P14) — parked
+// there, API unchanged, while apps migrate to `frappe-ui/charts`.
 
-// utilities
-export * from './components/TextEditor/extensions/image'
-export * from './components/TextEditor/extensions/suggestion'
-export { default as call, createCall } from './utils/call.js'
-export { dayjs, dayjsLocal } from './utils/dayjs'
+// Composables
+export { usePageMeta, type PageMeta } from './utils/pageMeta'
+export {
+  useColorScheme,
+  useResolvedColorScheme,
+  type ColorScheme,
+  type ResolvedColorScheme,
+} from './composables/useColorScheme'
+// `getResolvedColorScheme` is not exported (SHELL-Q11). It reads the document
+// once and does not react. Components read `useColorScheme().resolvedColorScheme`,
+// which is a ref; charts import the function internally to paint outside a
+// component. `useResolvedColorScheme()` is the reactive read for anything that
+// must not own the scheme: it observes `data-theme` and writes nothing.
+export {
+  shellScrollContainer,
+  useShellScrolled,
+} from './composables/useShellScrolled'
+// `useSheetDrag` is not exported (SHELL-Q7). `BottomSheet` is the only caller,
+// its thresholds are fixed constants, and no app used it. It can come back when
+// a second surface needs it.
+
+// Embedding: name one portal target for every overlay under a Vue app
+export {
+  portalTargetKey,
+  providePortalTarget,
+  usePortalTarget,
+} from './composables/usePortalTarget'
+export type { PortalTarget } from './composables/usePortalTarget'
+
+// Shared input scales. Every generated API table prints these alias names as a
+// prop's type (`size: InputSize`), and the per-component aliases built on them
+// — ComboboxSize, MultiSelectSize, ItemListSize — are already exported, so a
+// consumer typing a wrapper around TextInput can import the base too.
+export type {
+  InputSize,
+  InputVariant,
+  RangeSize,
+  ToggleSize,
+} from './composables/inputTypes'
+
+// The one method every input guarantees on a template ref, and the picker
+// family's larger surface on top of it (INP-Q5, ADR-0012). A generic form types
+// its control refs as `InputExposed` and calls `focus()` without a type guard.
+export type { InputExposed } from './composables/inputTypes'
+export type { PickerExposed } from './components/shared/picker/types'
+
+// The labeling props every input shares. A wrapper that forwards an input
+// error types it as `InputLabelingProps['error']`; the library owns no
+// separate name for that value (ADR-0008, VOC-Q4).
+export type { InputLabelingProps } from './composables/useInputLabeling'
+
+// One owned name for a router destination, so every `route` prop prints the
+// same type instead of vue-router's minified internal union.
+export type {
+  RouteDestination,
+  RouteLocationObject,
+} from './components/shared/route'
+
+// Directives
+export { vFocus } from './directives/focus'
+export { vOnOutsideClick } from './directives/onOutsideClick'
+
+// Utilities
+export { dayjs, dayjsLocal, type Dayjs } from './utils/dayjs'
 export { default as debounce } from './utils/debounce'
-export { default as fileToBase64 } from './utils/file-to-base64'
+// FileUploadHandler is the class FileUploader is built on; useFileUpload is
+// the recommended composable entry point for headless/custom-UI uploads.
+// fileToBase64 and the fileSize helpers (formatBytes, getMaxFileSize,
+// fileSizeLimitMessage) had zero external consumers at the v1 sweep — they
+// stay internal to the upload paths that use them.
 export { default as FileUploadHandler } from './utils/fileUploadHandler'
-export { usePageMeta } from './utils/pageMeta'
-export * from './utils/theme'
-export * from './utils/useFileUpload'
+export {
+  upload,
+  UploadError,
+  useFileUpload,
+  type UploadedFile,
+  type UploadErrorKind,
+  type UploadOptions,
+  type UploadState,
+} from './utils/useFileUpload'
 
-export { getConfig, setConfig } from './utils/config'
-export { frappeRequest } from './utils/frappeRequest.js'
-export { request } from './utils/request.js'
-export { default as initSocket } from './utils/socketio.js'
-
-// new data-fetching composables
-export * from './data-fetching'
-
-// plugin
-export { confirmDialog } from './utils/confirmDialog.js'
-export { default as pageMetaPlugin } from './utils/pageMeta.js'
-export { default as FrappeUI } from './utils/plugin.js'
+export * from './components/ImageViewer'

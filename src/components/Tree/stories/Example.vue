@@ -1,12 +1,10 @@
 <script setup lang="ts">
-import { reactive } from 'vue'
+import { ref } from 'vue'
 import { Tree } from 'frappe-ui'
+import type { TreeNode } from '../types'
 
-const state = reactive({
-  showIndentationGuides: true,
-  rowHeight: '25px',
-  indentWidth: '15px',
-  node: {
+const nodes = ref<TreeNode[]>([
+  {
     name: 'guest',
     label: 'Guest',
     children: [
@@ -17,13 +15,7 @@ const state = reactive({
           {
             name: 'download.zip',
             label: 'download.zip',
-            children: [
-              {
-                name: 'image.png',
-                label: 'image.png',
-                children: [],
-              },
-            ],
+            children: [{ name: 'image.png', label: 'image.png' }],
           },
         ],
       },
@@ -31,33 +23,21 @@ const state = reactive({
         name: 'documents',
         label: 'Documents',
         children: [
-          {
-            name: 'somefile.txt',
-            label: 'somefile.txt',
-            children: [],
-          },
-          {
-            name: 'somefile.pdf',
-            label: 'somefile.pdf',
-            children: [],
-          },
+          { name: 'somefile.txt', label: 'somefile.txt' },
+          { name: 'somefile.pdf', label: 'somefile.pdf' },
         ],
       },
     ],
   },
-})
+])
+
+// Expansion is a list of node keys. A key that is absent stays collapsed, so
+// `Documents` starts closed and the tree writes nothing back to `nodes`.
+const expanded = ref(['guest', 'downloads'])
 </script>
 
 <template>
-  <div>
-    <Tree
-      :options="{
-        showIndentationGuides: state.showIndentationGuides,
-        rowHeight: state.rowHeight,
-        indentWidth: state.indentWidth,
-      }"
-      nodeKey="name"
-      :node="state.node"
-    />
+  <div class="w-80">
+    <Tree :nodes="nodes" node-key="name" v-model:expanded="expanded" />
   </div>
 </template>

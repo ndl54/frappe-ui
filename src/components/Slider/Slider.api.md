@@ -3,6 +3,7 @@
   import PropsTable from '@/components/Docs/PropsTable.vue'
   import SlotsTable from '@/components/Docs/SlotsTable.vue'
   import EmitsTable from '@/components/Docs/EmitsTable.vue'
+  import ExposedTable from '@/components/Docs/ExposedTable.vue'
 
   const propsData = [
   {
@@ -21,7 +22,7 @@
   },
   {
     name: 'min',
-    description: 'Minimum allowed slider value.',
+    description: 'Minimum allowed slider value. Negative values enable bidirectional fill from zero.',
     required: false,
     type: 'number',
     default: '0'
@@ -30,7 +31,7 @@
     name: 'size',
     description: 'Visual size of the slider.',
     required: false,
-    type: 'ToggleSize',
+    type: 'RangeSize',
     default: '"sm"'
   },
   {
@@ -48,19 +49,19 @@
   },
   {
     name: 'description',
-    description: 'Helper text rendered below the input.\nHidden when `error` is set.',
+    description: 'Helper text rendered below the input.\nHidden when `error` is set. A `#description` slot is not: it renders\nbeside the error, and is referenced alongside it.',
     required: false,
     type: 'string'
   },
   {
     name: 'error',
-    description: 'Error message rendered below the input. When set, the control receives\n`aria-invalid="true"` and `data-state="invalid"`. May be either a string\nor an `Error` object whose `messages?: string[]` is rendered as stacked\nlines (with `Error.message` as the fallback).',
+    description: 'Error message rendered below the input. When set, the control receives\n`aria-invalid="true"` and `data-state="invalid"`. Takes a string, an\narray of strings, or an `Error` whose `messages` are rendered as stacked\nlines (with `Error.message` as the fallback). This is the same value\n`ErrorMessage.message` takes. An empty array and an empty string both\nmean no error.',
     required: false,
-    type: 'string | FrappeUIError'
+    type: 'ErrorMessageValue'
   },
   {
     name: 'required',
-    description: 'Marks the field as required. Renders an asterisk next to the label and\nforwards `required` / `aria-required` to the underlying control.',
+    description: 'Marks the field as required. Renders an asterisk next to the label, with\n`sr-only` text that announces it, and forwards `required` /\n`aria-required` to the underlying control where the control\'s role allows\nit. `data-required` is set either way.',
     required: false,
     type: 'boolean'
   },
@@ -99,16 +100,26 @@
   },
   {
     name: 'value-commit',
-    description: 'Fired once when the user finishes committing the value.',
+    description: 'Fired once when the user finishes dragging the slider.',
     type: '[value: SliderValue]'
   }
 ]
+
+  const exposedData = [
+  {
+    name: 'focus',
+    description: 'Moves focus to the thumb. A range slider focuses its first thumb.',
+    type: '(options?: FocusOptions) => void'
+  }
+]
 </script>
+
 ## API Reference
 
-<PropsTable name="Slider" :data="propsData"/> 
+<PropsTable name="Slider" :data="propsData"/>
 
-<SlotsTable :data="slotsData"/> 
+<SlotsTable :data="slotsData"/>
 
-<EmitsTable :data="emitsData"/> 
+<EmitsTable :data="emitsData"/>
 
+<ExposedTable :data="exposedData"/>

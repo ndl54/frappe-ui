@@ -1,7 +1,44 @@
-import { type Editor } from '@tiptap/core'
-import StarterKitExtension from '@tiptap/starter-kit'
+import { Extension, type Editor, type Extensions } from '@tiptap/core'
+import {
+  Blockquote,
+  type BlockquoteOptions,
+} from '@tiptap/extension-blockquote'
+import { Bold, type BoldOptions } from '@tiptap/extension-bold'
+import { Document } from '@tiptap/extension-document'
+import { HardBreak, type HardBreakOptions } from '@tiptap/extension-hard-break'
+import {
+  HorizontalRule,
+  type HorizontalRuleOptions,
+} from '@tiptap/extension-horizontal-rule'
+import { Italic, type ItalicOptions } from '@tiptap/extension-italic'
+import {
+  BulletList,
+  type BulletListOptions,
+  ListItem,
+  type ListItemOptions,
+  ListKeymap,
+  type ListKeymapOptions,
+  OrderedList,
+  type OrderedListOptions,
+} from '@tiptap/extension-list'
+import { ListJoin } from './extensions/list/list-join'
+import { Paragraph, type ParagraphOptions } from '@tiptap/extension-paragraph'
+import { Strike, type StrikeOptions } from '@tiptap/extension-strike'
+import { Text } from '@tiptap/extension-text'
+import { Underline, type UnderlineOptions } from '@tiptap/extension-underline'
+import {
+  Dropcursor,
+  type DropcursorOptions,
+  Gapcursor,
+  TrailingNode,
+  type TrailingNodeOptions,
+  UndoRedo,
+  type UndoRedoOptions,
+} from '@tiptap/extensions'
 import PlaceholderExtension from '@tiptap/extension-placeholder'
-import HeadingExtension from '@tiptap/extension-heading'
+import HeadingExtension, {
+  type HeadingOptions,
+} from '@tiptap/extension-heading'
 import HeadingIdsExtension from './extensions/heading/heading-ids'
 import { LinkExtension } from './extensions/link'
 // Custom code mark + lowlight code block (input rule, indent keymaps, language
@@ -13,6 +50,7 @@ import {
   TableCell as TiptapTableCell,
   TableHeader as TiptapTableHeader,
 } from '@tiptap/extension-table'
+import { columnResizing, tableEditing, TableView } from '@tiptap/pm/tables'
 import {
   cellBackgroundAttributes,
   TableCellColor as TableCellColorExtension,
@@ -31,6 +69,7 @@ import { ImageExtension } from './extensions/image'
 import { ImageGroup as ImageGroupExtension } from './extensions/image-group'
 import ImageViewerExtension from './extensions/image-viewer'
 import { VideoExtension } from './extensions/video'
+import { AttachmentExtension } from './extensions/attachment'
 import { MediaDrop as MediaDropExtension } from './extensions/media-drop/media-drop-extension'
 import { IframeExtension } from './extensions/iframe'
 import {
@@ -39,7 +78,11 @@ import {
 } from './extensions/mention/mention-extension'
 import { TagComposite, type TagSuggestionItem } from './extensions/tag'
 import EmojiExtension from './extensions/emoji/emoji-extension'
-import { SlashCommands } from './extensions/slash-commands/slash-commands-extension'
+import {
+  SlashCommands,
+  type CommandItem,
+  type SlashCommandsOptions,
+} from './extensions/slash-commands/slash-commands-extension'
 import { TocNodeExtension } from './extensions/toc-node'
 import { ContentPasteExtension } from './extensions/content-paste'
 import StyleClipboardExtension from './extensions/copy-styles'
@@ -50,7 +93,91 @@ export {
 } from './SuggestionExtension'
 export type { MentionSuggestionItem, TagSuggestionItem }
 
-export const StarterKit = StarterKitExtension
+type StarterKitMember<O> = Partial<O> | false
+
+/**
+ * Options for the frappe StarterKit.
+ *
+ * `code`, `codeBlock`, and `link` are NOT members: the kit never registers
+ * TipTap's versions, because the frappe `Code`, `CodeBlock`, and `Link`
+ * extensions replace them and a duplicate name would collide.
+ */
+export interface StarterKitOptions {
+  blockquote?: StarterKitMember<BlockquoteOptions>
+  bold?: StarterKitMember<BoldOptions>
+  bulletList?: StarterKitMember<BulletListOptions>
+  document?: false
+  dropcursor?: StarterKitMember<DropcursorOptions>
+  gapcursor?: false
+  hardBreak?: StarterKitMember<HardBreakOptions>
+  heading?: StarterKitMember<HeadingOptions>
+  horizontalRule?: StarterKitMember<HorizontalRuleOptions>
+  italic?: StarterKitMember<ItalicOptions>
+  listItem?: StarterKitMember<ListItemOptions>
+  listJoin?: false
+  listKeymap?: StarterKitMember<ListKeymapOptions>
+  orderedList?: StarterKitMember<OrderedListOptions>
+  paragraph?: StarterKitMember<ParagraphOptions>
+  strike?: StarterKitMember<StrikeOptions>
+  text?: false
+  trailingNode?: StarterKitMember<TrailingNodeOptions>
+  underline?: StarterKitMember<UnderlineOptions>
+  undoRedo?: StarterKitMember<UndoRedoOptions>
+}
+
+function pushConfigured<O>(
+  list: Extensions,
+  extension: { configure: (options?: Partial<O>) => any },
+  option: StarterKitMember<O> | undefined,
+) {
+  if (option !== false) list.push(extension.configure(option ?? {}))
+}
+
+/**
+ * Dropcursor with the design-system drop indicator: a 3px rounded gray bar
+ * (rounded corners via `.editor-drop-cursor` in style.css) instead of the
+ * default 1px black line.
+ */
+export const EditorDropcursor = Dropcursor.configure({
+  width: 3,
+  color: 'var(--surface-gray-10, #383838)',
+  class: 'editor-drop-cursor',
+})
+
+export const StarterKit = Extension.create<StarterKitOptions>({
+  name: 'frappeStarterKit',
+  addOptions() {
+    return {}
+  },
+  addExtensions() {
+    const list: Extensions = []
+    pushConfigured(list, Bold, this.options.bold)
+    pushConfigured(list, Blockquote, this.options.blockquote)
+    pushConfigured(list, BulletList, this.options.bulletList)
+    if (this.options.document !== false) list.push(Document)
+    pushConfigured(list, EditorDropcursor, this.options.dropcursor)
+    if (this.options.gapcursor !== false) list.push(Gapcursor)
+    pushConfigured(list, HardBreak, this.options.hardBreak)
+    pushConfigured(list, HeadingExtension, this.options.heading)
+    pushConfigured(list, UndoRedo, this.options.undoRedo)
+    pushConfigured(list, HorizontalRule, this.options.horizontalRule)
+    pushConfigured(list, Italic, this.options.italic)
+    pushConfigured(list, ListItem, this.options.listItem)
+    pushConfigured(list, ListKeymap, this.options.listKeymap)
+    pushConfigured(list, OrderedList, this.options.orderedList)
+    // Re-merges lists that an edit split apart. Its own key rather than a
+    // bulletList/orderedList guard: it also covers task lists, which come from
+    // RichTextKit. Opt out to keep parsed HTML structurally untouched.
+    if (this.options.listJoin !== false) list.push(ListJoin)
+    pushConfigured(list, Paragraph, this.options.paragraph)
+    pushConfigured(list, Strike, this.options.strike)
+    if (this.options.text !== false) list.push(Text)
+    pushConfigured(list, Underline, this.options.underline)
+    pushConfigured(list, TrailingNode, this.options.trailingNode)
+    if (this.options.heading !== false) list.push(HeadingIds)
+    return list
+  },
+})
 
 type PlaceholderStorage = { text: string | null }
 
@@ -104,12 +231,45 @@ export const Heading = HeadingExtension
  * Registered alongside `Heading` in the kits; `collectHeadings` reads its ids.
  */
 export const HeadingIds = HeadingIdsExtension
+/**
+ * Re-merges adjacent same-kind lists (bullet, ordered, task) that an edit split
+ * apart, so ordered-list numbering never restarts mid-list. In `StarterKit`;
+ * exported for anyone assembling extensions by hand.
+ */
+export { ListJoin }
 // frappe-ui's link: inline edit popup, Mod-k shortcut, smart paste handling, and
 // boundary clearing. Already defaults openOnClick:false / autolink:true.
 export const Link = LinkExtension
 export const Code = ExtendedCode
 export const CodeBlock = ExtendedCodeBlock
-export const Table = TiptapTable.configure({ resizable: true })
+// Stock @tiptap gates `columnResizing` behind `resizable && editor.isEditable`,
+// evaluated once at editor creation. That has three consequences we don't want:
+// the plugin also owns the `.tableWrapper` scroll container (so read-only and
+// born-read-only editors get a bare table that overflows its bounds), and
+// `setEditable()` never reconfigures plugins (so toggling an existing comment
+// into edit mode never installs resizing). `columnResizing` already no-ops its
+// own pointer handlers when `!view.editable`, so installing it whenever
+// `resizable` is set is safe in read-only and keeps the wrapper in every mode.
+export const Table = TiptapTable.configure({ resizable: true }).extend({
+  addProseMirrorPlugins() {
+    return [
+      ...(this.options.resizable
+        ? [
+            columnResizing({
+              handleWidth: this.options.handleWidth,
+              cellMinWidth: this.options.cellMinWidth,
+              defaultCellMinWidth: this.options.cellMinWidth,
+              View: this.options.View ?? TableView,
+              lastColumnResizable: this.options.lastColumnResizable,
+            }),
+          ]
+        : []),
+      tableEditing({
+        allowTableNodeSelection: this.options.allowTableNodeSelection,
+      }),
+    ]
+  },
+})
 // Cell nodes carry a named `backgroundColor` attribute (rendered via
 // `--prose-highlight-*`); see `extensions/table/table-cell-color`.
 export const TableCell = TiptapTableCell.extend({
@@ -151,6 +311,9 @@ export const Image = ImageExtension
 export const ImageGroup = ImageGroupExtension
 export const ImageViewer = ImageViewerExtension
 export const Video = VideoExtension
+// Inline file attachments (pdf, docx, zip, csv, …). Same shared upload function
+// as image/video; renders a gray chip/link via AttachmentNodeView.
+export const Attachment = AttachmentExtension
 export const MediaDrop = MediaDropExtension
 export const Iframe = IframeExtension
 export const Mention = MentionExtension
@@ -166,6 +329,13 @@ export const Tag = TagComposite
 
 export const Emoji = EmojiExtension
 export { SlashCommands }
+export type { CommandItem, SlashCommandsOptions }
 export const Toc = TocNodeExtension
 export const ContentPaste = ContentPasteExtension
 export const StyleClipboard = StyleClipboardExtension
+export type { MediaUploadRequestOptions } from './extensions/shared/media-upload-engine'
+
+// Required in `extensions` for `format: 'markdown'`. A plain re-export (no
+// use inside useEditor) so bundlers drop the markdown/marked payload for
+// editors that never import it.
+export { Markdown, type MarkdownExtensionOptions } from '@tiptap/markdown'

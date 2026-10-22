@@ -1,6 +1,7 @@
 import {
   onBeforeUnmount,
   shallowRef,
+  toRaw,
   toValue,
   watch,
   type MaybeRefOrGetter,
@@ -10,31 +11,47 @@ import {
 import {
   Editor as TiptapEditor,
   type JSONContent,
+  type Extensions,
   Extension,
 } from '@tiptap/core'
 import type { EditorOptions } from '@tiptap/core'
+import type { UploadFunction } from './extensions/shared/media-upload-types'
 
 type Editor = TiptapEditor
 
 export type UseEditorOptions = {
   content?: Ref<string | JSONContent | null | undefined>
-  format?: 'html' | 'json'
+  format?: 'html' | 'json' | 'markdown'
   editable?: MaybeRefOrGetter<boolean>
   autofocus?: boolean
-  uploadFunction?: (file: File) => Promise<UploadedFile>
-  extensions: NonNullable<EditorOptions['extensions']>
+  /**
+   * Upload handler for images, videos and attachments. The editor passes an
+   * options bag (abort signal + progress callback) as the second argument;
+   * a one-parameter function stays assignable.
+   */
+  uploadFunction?: UploadFunction
+  /**
+   * Every extension the editor loads. Accepts TipTap's `Extensions`, so
+   * marks and nodes go in the same array as plain extensions.
+   */
+  extensions: Extensions
   onUpdate?: (editor: Editor) => void
   onFocus?: (editor: Editor, event: FocusEvent) => void
   onBlur?: (editor: Editor, event: FocusEvent) => void
   onTransaction?: (editor: Editor) => void
 }
 
-export type UploadedFile = {
-  file_url?: string
-  file_name?: string
-  name?: string
-  [key: string]: unknown
-}
+/**
+ * The upload result contract, re-exported so `frappe-ui/editor` keeps one
+ * `UploadedMedia` name. The canonical declaration lives next to the media
+ * upload engine.
+ */
+export type {
+  UploadedMedia,
+  UploadFunction,
+  MediaUploadProgress,
+  MediaUploadRequestOptions,
+} from './extensions/shared/media-upload-types'
 
 const UploadStorage = Extension.create({
   name: 'upload',
@@ -52,26 +69,49 @@ export function useEditor(
     (extension) => extension.name === 'collaboration',
   )
   let applyingExternalUpdate = false
-  // The exact value last written OUT to `options.content` from `onUpdate`. The
-  // content watcher skips it so an internal edit doesn't bounce back through
-  // `setContent`. HTML can lean on string equality, but JSON's `getJSON()`
-  // returns a fresh object each edit, so reference-tracking the emitted value is
-  // the only cheap way to recognise our own write (and avoid resetting the
-  // selection on every keystroke in `format: 'json'`).
+  // The exact object last written OUT to `options.content` from `onUpdate`,
+  // in `format: 'json'` only. The content watcher skips it by identity so an
+  // internal edit doesn't bounce back through `setContent` and reset the
+  // selection on every keystroke. The string formats compare content instead,
+  // so they need nothing here.
   let lastEmitted: string | JSONContent | null | undefined
 
   const extensions = [UploadStorage, ...options.extensions]
+
+  if (
+    import.meta.env?.DEV &&
+    format === 'markdown' &&
+    !extensions.some((extension) => extension.name === 'markdown')
+  ) {
+    console.warn(
+      "[frappe-ui] format: 'markdown' needs the Markdown extension in `extensions` — import { Markdown } from 'frappe-ui/editor'.",
+    )
+  }
+
+  const serialize = (tiptapEditor: Editor) =>
+    format === 'json'
+      ? tiptapEditor.getJSON()
+      : format === 'markdown'
+        ? tiptapEditor.getMarkdown()
+        : tiptapEditor.getHTML()
 
   const editorOptions: Partial<EditorOptions> = {
     element: null,
     extensions,
     editable: toValue(options.editable) ?? true,
     autofocus: options.autofocus,
+    editorProps: {
+      handleDOMEvents: {
+        // ProseMirror's dragstart runs even when read-only and overwrites the drag
+        // data; claiming the event (without preventDefault) keeps the browser's
+        // native payload, such as a link URL.
+        dragstart: (view) => !view.editable,
+      },
+    },
     onUpdate: ({ editor: tiptapEditor }) => {
       if (!isCollaborationMode && options.content && !applyingExternalUpdate) {
-        const value =
-          format === 'json' ? tiptapEditor.getJSON() : tiptapEditor.getHTML()
-        lastEmitted = value
+        const value = serialize(tiptapEditor)
+        if (format === 'json') lastEmitted = value
         options.content.value = value
       }
       options.onUpdate?.(tiptapEditor)
@@ -87,11 +127,32 @@ export function useEditor(
     },
   }
 
+  if (format === 'markdown') {
+    editorOptions.contentType = 'markdown'
+  }
+
   if (!isCollaborationMode && options.content?.value != null) {
     editorOptions.content = options.content.value
   }
 
   editor.value = new TiptapEditor(editorOptions as EditorOptions)
+
+  // We build with `element: null` and let `<EditorContent>` mount later, so an
+  // unmounted editor has no view and no ProseMirror plugins at all. Normalize
+  // the parsed document here instead, or a headless caller — `getHTML()` before
+  // the child mounts, a markdown export that never renders — reads back the
+  // split lists it was handed. No-op once the schema has no list node.
+  // The metas are ours, not the command's: opening a document is not an edit.
+  // Guarded by `can()` because a chain dispatches even when its command
+  // returns false, and an empty transaction still reaches `onTransaction`.
+  if (editor.value.can().joinAdjacentLists?.()) {
+    editor.value
+      .chain()
+      .joinAdjacentLists()
+      .setMeta('preventUpdate', true)
+      .setMeta('addToHistory', false)
+      .run()
+  }
 
   const editorStorage = editor.value.storage as typeof editor.value.storage & {
     upload?: { uploadFunction: UseEditorOptions['uploadFunction'] }
@@ -104,14 +165,47 @@ export function useEditor(
   if (!isCollaborationMode && options.content) {
     watch(options.content, (content) => {
       if (!editor.value) return
-      // Our own write bounced back through the ref — ignore it (covers JSON,
-      // whose fresh-object identity defeats the HTML string check below).
-      if (content === lastEmitted) return
+      // Our own JSON write bounced back through the ref — ignore it.
+      // `getJSON()` returns a fresh object each edit, so identity is the only
+      // cheap way to recognise it. HTML and markdown are left to the string
+      // checks below: they compare against what the editor holds right now, so
+      // an external update that restores an earlier value still applies, where
+      // matching `lastEmitted` by value would drop it.
+      // `lastEmitted` is only ever a `getJSON()` object, so the `undefined`
+      // check only rules out its initial value — without it, clearing an
+      // untouched editor with `undefined` would match and be skipped.
+      if (
+        format === 'json' &&
+        lastEmitted !== undefined &&
+        toRaw(content) === lastEmitted
+      )
+        return
       if (format === 'html' && editor.value.getHTML() === content) return
+      if (format === 'markdown' && editor.value.getMarkdown() === content)
+        return
 
       applyingExternalUpdate = true
-      editor.value.commands.setContent(content ?? '', { emitUpdate: false })
-      applyingExternalUpdate = false
+      try {
+        editor.value.commands.setContent(
+          content ?? '',
+          format === 'markdown'
+            ? { emitUpdate: false, contentType: 'markdown' }
+            : { emitUpdate: false },
+        )
+        // Same reason as at construction: while unmounted there are no
+        // plugins, so nothing normalizes what `setContent` just parsed.
+        // No-op when there is nothing to join.
+        if (editor.value.can().joinAdjacentLists?.()) {
+          editor.value
+            .chain()
+            .joinAdjacentLists()
+            .setMeta('preventUpdate', true)
+            .setMeta('addToHistory', false)
+            .run()
+        }
+      } finally {
+        applyingExternalUpdate = false
+      }
     })
   }
 

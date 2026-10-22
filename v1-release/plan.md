@@ -4,10 +4,9 @@ This is the main planning document for the `frappe-ui` v1 release.
 
 Keep separate docs only where that genuinely helps:
 
-- [`04-components-audit.md`](./04-components-audit.md) for the component audit matrix
-- [`08-selection-and-menu-api-spec.md`](./08-selection-and-menu-api-spec.md) for the accepted menu/selection API direction
-- [`08f-dialog-spec.md`](./08f-dialog-spec.md) for the accepted Dialog + imperative `dialog.*` API direction
-- [`09-input-components-spec.md`](./09-input-components-spec.md) for the accepted input-family API direction (TextInput, Textarea, Password, Checkbox, Switch, Rating, Slider, ErrorMessage; FileUploader covered separately)
+- [`../spec/selection.md`](../spec/selection.md) and [`../spec/dropdown.md`](../spec/dropdown.md) for the selection and menu API contracts
+- [`../spec/dialog.md`](../spec/dialog.md) for the accepted Dialog + imperative `dialog.*` API direction
+- [`../spec/inputs.md`](../spec/inputs.md) for the accepted input-family API direction (TextInput, Textarea, Password, Checkbox, Switch, Rating, Slider, ErrorMessage; FileUploader covered separately)
 
 ## What v1 means
 
@@ -19,9 +18,8 @@ In practice, v1 means:
 
 - core component APIs are stable and audited
 - core components are modernized to TypeScript, `<script setup>`, docs, stories, and tests
-- v3 data APIs are the recommended path for new work
-- Gameplan is fully migrated to v3 before the tag
-- v1 resource APIs and v2 composables remain exported for migration, but are deprecated
+- v2 composables are the recommended data-fetching path for new work; v3 lands in a later `1.x` minor, not this tag
+- v1 resources and v2 composables both ship supported and un-deprecated — see "Data API strategy"
 - legacy APIs/components move out of the happy path and into migration/legacy docs
 - `TextEditor` ships with a narrower default surface for v1
 - the release is backed by docs refresh, migration guidance, deprecation warnings, and an RC validation pass
@@ -30,11 +28,11 @@ In practice, v1 means:
 
 1. **Stabilize what people should use next.**
    - for components, that means the core public component set
-   - for data APIs, that means v3
+   - for data APIs, that means v2 composables for `1.0.0`; v3 later, once it ships
 2. **Keep migration paths open.**
    - deprecated APIs stay available during the transition
 3. **Use a real app to validate the new direction.**
-   - Gameplan is the proving ground for v3
+   - Gameplan is v2's heaviest real consumer today (71 of 132 sites) and will be v3's proving ground once it ships
 4. **Avoid unnecessary breadth before freeze.**
    - non-core areas should not silently become blockers
 
@@ -69,7 +67,6 @@ Core set:
 - ErrorMessage
 - FileUploader
 - FormControl
-- ListView
 - MultiSelect
 - Password
 - Popover
@@ -90,11 +87,29 @@ Core set:
 
 ### Explicitly not core for v1
 
-- Calendar
+- Calendar — moved from root to `frappe-ui/experimental` (#1020, P14). Parked
+  as-is, API unchanged, until a redesigned calendar family replaces it.
+- Charts (v1) — moved from root to `frappe-ui/experimental` (#942, P14). Parked
+  as-is, API unchanged, while apps migrate to `frappe-ui/charts`.
 - Resource
-- VueGridLayout
 
 These can still exist in the package, but they are not part of the v1 stabilization contract.
+(VueGridLayout was listed here; it's deleted now — see #943.)
+
+### Exported but not yet classified for v1
+
+These ship in the package but were never folded into the core-set contract above.
+v1 must make an explicit keep / refine / remove decision on each — tracked in the
+[v1 component refinement pass](#v1-component-refinement-pass).
+
+- **Pill** — used only inside `TabButtons` in practice. Decision: stop exporting from the public package surface.
+- **Duration** — publicly exported. Decision: whether it is core v1 surface; if it holds a value, align with the input-family contract.
+- **ThemeSwitcher** — moved out of the root export to `frappe-ui/experimental` (#1094, P14), where it parks still deprecated. Prefer `Select` plus the `useColorScheme` composable for app-specific theme switching.
+- **CodeEditor** — ~~exported from `frappe-ui/experimental` (ADR-0010, #939). Decided: stays internal under P14 unless there is demand to promote it to a public entry point.~~ **Superseded** ([ADR-0019](../spec/adr/0019-code-editor-family-composition-model.md)): the demand arrived from `@framework/ui`, which already imports the component. A CodeMirror 6 family (`useCodeEditor`, a renderless `CodeEditor`, `CodeEditorContent`, `CodeKit`) ships at `frappe-ui/code-editor` before the tag, and the experimental `CodeEditor`/`CodePreview` pair is deleted with no deprecation window (P14). The labeled field moves to `@framework/ui`. Spec: [`../spec/code-editor.md`](../spec/code-editor.md).
+- **ListView** — moved from root to `frappe-ui/experimental` (#985, P14). The parity gap with `frappe-ui/list` is real and structural (resizable columns, per-column function props, tooltips, disabled-row exclusion, select banner). Decided: stays there, unstable, until `frappe-ui/list` reaches parity.
+
+`MonthPicker` stays in the core list above for now but is under a remove-or-rebuild
+decision (see the refinement pass).
 
 ## Agreed broad component direction
 
@@ -120,107 +135,150 @@ We have only agreed on a small set of broad component decisions so far.
 
 For the selection/menu family, `ItemListRow` is the shared row primitive used internally by `Dropdown`, `Select`, `Combobox`, and `MultiSelect`. Each higher-level component owns its own listbox shell (keyboard nav, grouping, empty/footer slots, etc.); only the row presentation is shared.
 
-Use [`08-selection-and-menu-api-spec.md`](./08-selection-and-menu-api-spec.md) as the source of truth for that family.
+Use [`../spec/selection.md`](../spec/selection.md) for the pickers and
+[`../spec/dropdown.md`](../spec/dropdown.md) for the menu.
 
 ### Still open
 
 We have **not** yet agreed on broad reusable rules for every complex component family. Dialog, Tooltip, Tabs, and other overlay/component families still need separate design passes.
 
+## v1 component refinement pass
+
+A focused, component-level pass identified after the beta.11 audit. These are the
+components that still need work — or an explicit decision — before they meet the v1
+bar; everything else in the core set is considered at-bar. (This section supersedes
+the earlier `04-components-audit.md` matrix, which was a stale structural snapshot and
+has been removed.)
+
+Items typed **decision** are scope calls to make *first*: resolving several of them
+*removes* work rather than adding it.
+
+| Component | Direction | Type | Open PR / branch | Effort | Blocks v1 |
+| --- | --- | --- | --- | --- | --- |
+| **Alert** | Replace type-specific `#icon` slot with `#prefix` (deprecate `#icon`, P6); add uniform `icon?: string \| Component` prop (P11); reconcile `dismissible`/`theme` default drift (code vs JSDoc); add focus-visible on the dismiss button (P12). | refine | — | S | yes |
+| **CodeEditor** | ~~Exported from `frappe-ui/experimental` (ADR-0010, #939). Decided: keep internal under P14 unless there is demand to promote it.~~ **Superseded** ([ADR-0019](../spec/adr/0019-code-editor-family-composition-model.md)): the demand arrived from `@framework/ui`. Not kept internal and not promoted as-is. The field is redesigned into a family (`useCodeEditor` + renderless `CodeEditor` + `CodeEditorContent` + `CodeKit`) and ships at `frappe-ui/code-editor`, which returns as a subpath on all three ADR-0010 limbs. The experimental `CodeEditor`/`CodePreview` pair is deleted; the labeled field and `CodePreview` become `@framework/ui`'s. | decided (family ships at `frappe-ui/code-editor`) | ADR-0019 | M | yes |
+| **Duration** | Exported, never classified. Decide if it is core v1 surface; if it holds a value, align with the input-family labeling contract (P5). | decision / refine | — | S→M | only if kept core |
+| **FileUploader** | Bring to structural bar: TS + `<script setup>`, `types.ts`, `*.cy.ts`; declare/deprecate `success`/`failure` emits (P1); flat props over the `uploadArgs` blob (P3); default uploads to `is_private` (security #206). | refactor | #788 (closed unmerged), #673 (CSV MIME) | L | yes |
+| **ListView** | ~~Deprecate in favor of `frappe-ui/list`; do not refactor the legacy component for v1.~~ ~~Superseded (sweep #882): parity isn't reached and can't close passively... ListView ships **frozen, not deprecated**, for v1.~~ **Superseded again** (#985): not taken to bar at root. Moved to `frappe-ui/experimental` (P14, no stability promise) instead of frozen at root — stays there until `frappe-ui/list` reaches full functional parity (config-driven columns, per-column functions, tooltips, disabled-row exclusion, select banner). | decided (moved to experimental) | #985 | — | no |
+| **MonthPicker** | **Remove for v1** (recommended): deprecate the export with a warning + migration note and drop from the core set — it never moved onto the shared picker architecture. Alternative: rebuild on the DatePicker family arch. | decision (remove) | — | S→L | yes |
+| **Pill** | **Stop exporting** — confirmed used only inside `TabButtons`. Deprecate the public export (P13), keep it internal; retain `PillSize` for internal use. | decision (un-expose) | — | S | yes |
+| **Popover** | Refactor to the v1 floating vocab: `v-model:open`, `side`/`align`/`offset` (deprecate `placement`), `data-slot` hooks (drop `popoverClass`, P10), canonical slots, a11y. The last floating outlier. | refactor | — | M | yes |
+| **Sidebar** | Refactor to **molecule-style composable sub-components, no slots**: expose `SidebarHeader` / `SidebarSection` / `SidebarItem` for composition instead of `header`/`sections` config blobs (P3) + generic slots (P10). | refactor | conflicts with #770 (adds a slot — redirect/close) | L | yes |
+| **Switch + Checkbox** | Add the `padded` variant. | land PR | #751 (also adds a new **Radio** — decide if Radio enters v1 scope) | S | yes |
+| **Tabs + TabButtons** | Unify the two overlapping public components — nest TabButtons' segmented rendering inside `Tabs`, or merge into one `Tabs` with a style axis (P8: a purely-visual variant → one component). Resolve before freeze. | refactor | branches: refactor-tabs, tabs-rewrite, improved-tab-buttons | M | yes |
+| **ThemeSwitcher** | ~~Keep exported for v1 compatibility, mark deprecated.~~ **Superseded** (#1094): not taken to bar at root. Moved to `frappe-ui/experimental` (P14, no stability promise), where it stays deprecated, rather than shipping deprecated on the frozen surface. `Select` + `useColorScheme` remains the recommendation for new theme switchers, and the composable remains the stable primitive. | decided (moved to experimental) | #1094 | — | no |
+| **Tree** | Land the rework PR (adds the WAI-ARIA tree pattern + keyboard nav, P12; resolves the `options` config-blob, P3). | land PR | #783 (draft) | track PR | yes |
+
+### Decisions to make first (they shrink scope)
+
+- **MonthPicker → remove / deprecate** rather than rebuild.
+- **Pill → un-export** (internal-only).
+- ~~**CodeEditor → keep internal**, exported from `frappe-ui/experimental` (#939), unless there is demand to promote it.~~ **Superseded** ([ADR-0019](../spec/adr/0019-code-editor-family-composition-model.md)): **CodeEditor → ship the family** at `frappe-ui/code-editor` before the tag, delete the experimental pair, and hand the labeled field to `@framework/ui`. This one grows scope instead of shrinking it.
+- **ThemeSwitcher → parked in `frappe-ui/experimental`**, still deprecated (#1094); `useColorScheme` stays available at root as the stable primitive.
+- **Radio (from #751) → confirm** whether a new component enters v1 scope or lands post-v1.
+
+Resolving these as "remove / keep-internal / defer" turns four potential
+modernization efforts into doc + deprecation edits. CodeEditor is now the exception:
+ADR-0019 replaces its keep-internal decision with a family to build.
+
+### Open-PR alignment
+
+- **Land / finish:** #751 (Switch/Checkbox padded), #783 (Tree rework), #788 (FileUploader chunked uploads — fold into the FileUploader pass).
+- **Redirect / close** as conflicting with agreed direction: #770 (adds a Sidebar slot; the agreed direction is no-slots composable sub-components).
+- **Consolidate** the tab branches (refactor-tabs, tabs-rewrite, improved-tab-buttons) into the single Tabs/TabButtons unification.
+
 ## Data API strategy
 
-### v1 data APIs
+Two data-fetching generations ship at `1.0.0`, both supported and both frozen.
+A third does not ship yet. This section was rewritten by
+[#934](https://github.com/frappe/frappe-ui/issues/934) after
+[#886](https://github.com/frappe/frappe-ui/issues/886) settled the export
+posture; see that ticket for the full census and reasoning.
 
-Examples:
+### v1 resources — supported, frozen, un-deprecated
 
-- `createResource`
-- `createListResource`
-- `createDocumentResource`
-- `resourcesPlugin`
-- `Resource.vue`
-
-Status for v1:
-
-- still exported
-- supported as migration path
-- deprecated for new usage
-- hidden from standard docs
-- documented only on the legacy page and migration guide
-- should warn in dev mode
-
-### v2 data APIs
-
-Examples:
-
-- `useList`
-- `useDoc`
-- `useCall`
-- `useDoctype`
-- `useNewDoc`
+`createResource`, `createListResource`, `createDocumentResource`,
+`getCachedResource`, `getCachedListResource`, `getCachedDocumentResource`,
+`resourcesPlugin`, `saveLocal`, `getLocal`, `deleteLocal`, `onDocUpdate`
+(`src/resources/`).
 
 Status for v1:
 
-- still exported
-- **not** deprecated for 1.0 — supported
-- recommended for Frappe v15 and for codebases not yet on v3
-- no dev-mode deprecation warnings
-- documented in main docs
+- still exported, **not deprecated** — no `@deprecated` marker, so ADR-0008
+  does not reach them
+- documented in the docs site's own "Resources" section (three pages:
+  Resource, List Resource, Document Resource) — not a legacy or
+  migration-only page
+- frozen at `1.0.0` like any other export, with one exception:
+  [ADR-0013](../spec/adr/0013-v1-resources-implementation-freeze.md) keeps the
+  implementation as hand-written JavaScript rather than requiring a
+  TypeScript rewrite. Tests, docs, and `1.x` bug fixes stay allowed; renames,
+  signature changes, and additions stay out until `2.0.0`, the same as any
+  other frozen export.
+- no dev-mode warnings
 
-Rationale: v3 ships in 1.0 but is recommended only for Frappe v16+. v2 remains
-the supported path for v15 users and existing codebases. v2's eventual fate
-is a post-v1 decision tied to v3 adoption and v15 backport status.
+This is the larger of the two surviving data layers by a wide margin: **344
+call sites across 204 files**, in helpdesk, crm, builder, insights, and
+`frappe/frappe`'s `ui/` package — five of six apps counted. It is what most
+consumers actually run, not a migration-path surface.
 
-### v3 data APIs
+### v2 composables — the recommended layer for new code
 
-Implemented in PR #610 (`frappe/client/`). Exports from
-`frappe-ui/frappe/vue`:
-
-- `createClient`
-- `createDefaultCacheAdapter`
-- `defineDoctype` (returned from `createClient`)
-- doctype handles: doc / list / count / newDoc
+`useList`, `useDoc`, `useCall`, `useDoctype`, `useNewDoc`
+(`src/data-fetching/`).
 
 Status for v1:
 
-- ships in 1.0 (merged from PR #610)
-- recommended path for new code on Frappe v16+
-- **frozen public import surface** — `createClient` and the public types/exports above are stable for the 1.x line
-- **internal signatures may evolve** in 1.x minors via deprecation cycles only — no breaking changes
-- partial Gameplan migration provides the stress-test signal; full migration is post-v1
+- still exported, **not deprecated** — supported
+- recommended for new code, on Frappe v15 or v16+ alike (see "Frappe
+  Framework compatibility" below)
+- no dev-mode warnings
+- the docs sidebar splits into two sections — **Data Fetching** (v2,
+  carrying a line naming it the recommended layer for new code) and
+  **Resources** (v1, carrying a line stating it is fully supported through
+  `1.x`) — neither uses "legacy" or "deprecated" wording, since neither is
+  true. Docs pages, the sidebar split, and the exports themselves are
+  [#932](https://github.com/frappe/frappe-ui/issues/932); the at-bar pass
+  (tests, P1–P15 audit) is
+  [#933](https://github.com/frappe/frappe-ui/issues/933).
 
-### v3 frozen surface contract
+Recounted against freshly fetched trees, v2 usage is **132 call sites across
+119 files**, in gameplan, central, suite, `frappe_calendar`, and
+`frappe-ui-starter` — a different set of five apps than v1's. `suite` is the
+one mixed consumer: v2 in its `writer` and parts of `mail`, v1 in `drive` and
+`meet`. Neither generation is "legacy" in the sense earlier drafts of this
+plan used the word — the split between them is which app happens to use
+which, not which one is being migrated away from.
 
-What is frozen for 1.0:
+### v3 — not in `1.0.0`
 
-- import path `frappe-ui/frappe/vue`
-- `createClient` exists and returns `{ defineDoctype, store }` plus the client object
-- `createDefaultCacheAdapter(name: string)` exists
-- doctype handles for doc / list / count / newDoc exist and are reactive
-- public type exports (props, return types of `createClient`, handle types)
+[#867](https://github.com/frappe/frappe-ui/issues/867) ruled v3 out of the
+tag: PR #610 (`frappe/client/`) was still open and unmerged when the
+`frappe/` directory it lives under was deleted from the package, so
+`frappe/client/` never enters the tree before `1.0.0` and the deletion cost
+it nothing. Consequences:
 
-What may evolve (only via deprecation cycle in 1.x):
-
-- specific method names on handles
-- option keys on `createClient`
-- ergonomic additions (new methods, new options)
-- cache adapter contract internals
-
-### v3 requirements before v1
-
-- PR #610 self-reviewed against `frappe/client/spec/*.md`
-- smoke-tested against the partial Gameplan v3 migration
-- merged with a one-time dev-mode notice on `createClient` (e.g. "v3 is recommended for Frappe v16+")
-- frozen surface contract documented (see section above)
-- migration path from v1 resources documented on the legacy page (v2 → v3 deferred to post-v1)
+- v3 ships in a later `1.x` minor, from whatever import path it lands at —
+  `frappe-ui/frappe/vue` is not that path, since `frappe-ui/frappe` was
+  removed for `1.0.0` (#867, #924). Nobody imported `frappe-ui/frappe/vue`
+  (0 files across all consumer apps), so nothing is stranded.
+- PR #610 needs a rebase off the deleted `frappe/client/` directory to a
+  home decided when that minor is planned.
+- The frozen-surface contract, the `createClient` dev notice, and the rest of
+  v3's shape are questions for whenever that minor is planned. Nothing about
+  v3 is frozen or required for `1.0.0`.
+- v2 takes `useList`, `useDoc`, `useCall`, `useDoctype`, `useNewDoc` at the
+  root export, frozen until `2.0.0` — so v3 either picks different names or
+  earns a subpath under P15 when it lands.
 
 ### Frappe Framework compatibility
 
-v3 depends on `/api/v2/*` endpoints in Frappe Framework.
-
-Decision:
-
-- Frappe v15 backport work does **not** block v1
-- v3 can be recommended for Frappe v16+
-- the v15 backport belongs in the post-v1 roadmap unless it lands naturally earlier
+v2 depends on `/api/v2/*` endpoints in Frappe Framework. Confirmed against
+`frappe/api/v2.py` on `origin/version-15` (Frappe `15.117.0`): every route v2
+hits — `GET`/`POST /document/<doctype>`, `PUT`, `DELETE`,
+`/document/.../method/...`, `/method/<doctype>/<method>` — already exists on
+v15. **v2 works on Frappe v15 today; no backport is needed** to recommend it
+there.
 
 ## Deprecation policy
 
@@ -233,18 +291,28 @@ Use medium-aggressive warnings in development:
 
 ### Deprecated but retained exports
 
-Keep exported for migration:
+Superseded by [ADR-0008](../spec/adr/0008-no-deprecated-members-in-1-0-0.md):
+nothing marked `@deprecated` ships in `1.0.0`, so each deprecated export is
+removed before the tag rather than retained through `1.x`.
+
+The full removal queue — verified against `src/index.ts`, with replacements —
+is [`deprecated-removals.md`](./deprecated-removals.md). The short list below
+is what this plan originally named; it is a subset and is kept only for
+context.
 
 - v1 resource APIs
 - v2 composables
-- `Resource.vue`
+- `Resource.vue` (already gone — the file no longer exists)
 - `Input.vue`
 - `Autocomplete`
 - `FeatherIcon`
 
+Note that the v1 resource APIs and v2 composables are not actually marked
+`@deprecated` in code, so ADR-0008 does not reach them. See
+[`deprecated-removals.md`](./deprecated-removals.md#not-in-scope-for-adr-0008).
+
 ### Special handling
 
-- `Resource.vue`: deprecated and hidden from standard docs
 - `Input.vue`: deprecated in favor of the modern input/control stack
 - `Autocomplete`: deprecated in favor of the split selection/menu components
 - `FeatherIcon`: export retained for back-compat. Components that accept icon-name props (e.g. `Button.icon`, `Dialog.icon`, `Dropdown` item icons) continue to render feather names through `FeatherIcon` so existing call sites do not break. Internal **hardcoded** icon usages migrate to `lucide-*` strings via the shared Tailwind plugin. Docs recommend `lucide-*` (or a passed `Component`) for new code.
@@ -266,11 +334,13 @@ Also remove internal `FeatherIcon` use across core components.
 
 ### 2. Selection/input family stabilization
 
-See [`08-selection-and-menu-api-spec.md`](./08-selection-and-menu-api-spec.md).
+See [`../spec/selection.md`](../spec/selection.md) and
+[`../spec/dropdown.md`](../spec/dropdown.md).
 
 Key items:
 
-- deprecate `Autocomplete` in favor of separate higher-level components
+- ~~remove `Autocomplete` in favor of `Combobox` / `MultiSelect`~~ — done, see
+  [#926](https://github.com/frappe/frappe-ui/issues/926)
 - finalize `ItemListRow` as the shared row primitive
 - finalize `Select`, `Combobox`, `Dropdown`, `MultiSelect`, `FormControl`, and `Switch`
 - align the family on `v-model`, `v-model:open`, shared trigger/item slot vocabulary, and `@update:query`
@@ -286,14 +356,24 @@ Key items:
 ### 4. TextEditor stabilization
 
 **v1 carve-out:** TextEditor's public API is **not** frozen for 1.0. The
-component ships in 1.0 as-is. A full refactor (internals + public API
-redesign + the open behavioral fixes) lands in **1.1** with a documented
-migration path. Until then, the existing TextEditor surface is supported
-unchanged.
+component ships in 1.0 as-is — no changes to `TextEditor.vue`'s own props,
+slots, or emits. A full refactor (internals + public API redesign + the open
+behavioral fixes) lands in **1.1** with a documented migration path.
+
+This carve-out is about the *component's own API*, not its export surface.
+ADR-0008 still reaches the deprecated root exports (`TextEditor`,
+`TextEditorBubbleMenu`, `TextEditorFixedMenu`, `TextEditorFloatingMenu`,
+`TextEditorContent`, `createEditorButton`, and the `extensions/image` /
+`extensions/suggestion` barrels) — those are removed from `frappe-ui` at 1.0
+(#884), same as every other `@deprecated` export. The component files stay in
+the package, unmodified, as `frappe-ui/editor`'s migration safety net; they're
+just no longer reachable from any public import path until the 1.1 redesign
+gives them one.
 
 Required for 1.0:
 
-- no changes to `TextEditor.vue` public API
+- no changes to `TextEditor.vue` public API (the component's own props/slots/emits)
+- the deprecated root exports removed per ADR-0008 (#884)
 - release notes explicitly state the carve-out
 
 Deferred to 1.1 (bundled into a single refactor effort):
@@ -306,29 +386,36 @@ Deferred to 1.1 (bundled into a single refactor effort):
 - table editing UX improvements
 - collapsible section / additional editor features
 
-### 5. v3 finalization and Gameplan migration
+### 5. v2 at-bar pass
 
-**v1 scope:** v3 ships in 1.0 via PR #610 with a frozen public import
-surface (see "Data API strategy" above). Full Gameplan migration is
-**post-v1**.
+**v1 scope:** v2 composables ship at `1.0.0` as the recommended layer (see
+"Data API strategy" above) and have to reach bar first: fix a shared-state
+concurrency bug, then bring tests, docs, and the P1–P15 audit up to the
+[at-bar](../spec/at-bar.md) checklist. v3 is **not** in scope for `1.0.0`;
+see "Data API strategy" for where it stands.
 
 Required for 1.0:
 
-- PR #610 self-reviewed and merged
-- partial Gameplan migration used as the stress-test signal
-- frozen surface contract documented
-- one-time dev-mode notice on `createClient` ("v3 is recommended for Frappe v16+")
+- [#931](https://github.com/frappe/frappe-ui/issues/931): fix the shared-`useCall`
+  concurrency bug in `useDoctype` and `useList`
+- [#932](https://github.com/frappe/frappe-ui/issues/932): v2 export surface,
+  docs pages, and the docs sidebar split
+- [#933](https://github.com/frappe/frappe-ui/issues/933): v2 tests and P1–P15
+  audit
+- [#934](https://github.com/frappe/frappe-ui/issues/934): v1 resources'
+  ADR-0013, read-only audit, and `listResource.test.ts` (this document's
+  rewrite)
 
-Post-v1 umbrella: full Gameplan migration off v1 resources, eventual v2
-deprecation decision, Frappe v15 backport, DocType Meta composable, related
-ergonomics. Tracked as a single post-v1 umbrella issue.
+Post-v1 umbrella: full Gameplan migration off v1 resources, v3's eventual
+shape and shipping minor, DocType Meta composable, related ergonomics.
+Tracked as a single post-v1 umbrella issue.
 
 ### 6. Docs, legacy page, warnings, and RC
 
 Required outputs:
 
 - docs refresh for core components
-- v3 data docs
+- v2 data-fetching docs and the sidebar split (see "Data API strategy")
 - migration guide
 - single legacy APIs/components page
 - deprecation warnings in dev mode
@@ -336,28 +423,27 @@ Required outputs:
 
 Legacy page should include at minimum:
 
-- `createResource`
-- `createDocumentResource`
-- `createListResource`
-- `Resource.vue`
-- `resourcesPlugin`
 - `Input.vue`
-- `Autocomplete`
 - `FeatherIcon`
 
-v2 composables (`useCall`, `useDoc`, `useList`, `useDoctype`, `useNewDoc`)
-stay in the **main** docs — they are not deprecated for 1.0.
+v1 resources (`createResource`, `createDocumentResource`,
+`createListResource`, `resourcesPlugin`, and the rest — see "Data API
+strategy") are **not** legacy-page material: they get their own "Resources"
+docs section, since they are not deprecated. v2 composables (`useCall`,
+`useDoc`, `useList`, `useDoctype`, `useNewDoc`) stay in the **main** "Data
+Fetching" docs section — they are not deprecated either.
 
 ## Release blockers
 
 v1 should not ship before all of these are done:
 
 - release contract and quality gates are defined
-- core components are migrated to TypeScript and `<script setup>` and have docs/stories/tests baselines (FileUploader, TabButtons, ListView remaining)
+- core components are migrated to TypeScript and `<script setup>` and have docs/stories/tests baselines (FileUploader remaining; ListView moved to `frappe-ui/experimental` and is out of the core set — see [ListView row](#v1-component-refinement-pass))
+- the [v1 component refinement pass](#v1-component-refinement-pass) is complete: the refactors (FileUploader, Popover, Sidebar, Tabs/TabButtons, Tree) and refinements (Alert, Switch/Checkbox padded) land, and the keep/remove decisions (MonthPicker, Pill, Duration, ThemeSwitcher, Radio) are made and executed. CodeEditor left that set: [ADR-0019](../spec/adr/0019-code-editor-family-composition-model.md) makes it a build, not a keep/remove call, and the `frappe-ui/code-editor` family must land before the tag
 - selection/input family stabilization is complete enough for v1
 - Dialog/floating stabilization is complete enough for v1
 - TextEditor 1.0 carve-out documented (public API unchanged; refactor in 1.1)
-- v3 PR #610 merged with frozen surface contract documented
+- v2 composables reach bar: concurrency-bug fix (#931), export/docs (#932), tests and P1–P15 audit (#933)
 - file uploads default to `is_private: true` (security #206)
 - color tokens aligned with Figma
 - deprecation warnings and legacy docs exist
@@ -379,12 +465,12 @@ These stay in the plan, but should not block `1.0.0`:
 
 - session and user utilities
 - first-class socket.io utilities
-- full migration of `frappe-ui/frappe/*` internals to v3
-- Frappe v15 `/api/v2/*` backport
+- full migration of `frappe-ui/frappe/*` internals to v3 (moot — the
+  directory is deleted, see #924)
 - TextEditor table editing UX improvements
 - downstream migration PRs across all products
 - Calendar stabilization
-- VueGridLayout modernization
+- VueGridLayout modernization (moot — the component is deleted, see #943)
 
 ## Release gates
 
@@ -398,7 +484,6 @@ Do not tag `1.0.0` until all of the following are true:
 - legacy docs page exists
 - migration guide exists
 - deprecation warnings exist for v1/v2/legacy components
-- Gameplan is fully on v3 data APIs
 - release candidate has been validated
 
 ## Immediate post-v1 roadmap
@@ -407,15 +492,15 @@ These are important, but should not block v1 unless they land naturally earlier.
 
 ### Data and framework
 
-- Frappe v15 `/api/v2/*` backport
 - session and user utilities
 - first-class socket.io utilities
-- broader internal migration of `frappe-ui/frappe/*` to v3
+- full Gameplan / downstream app migration to v3 data APIs
 
 ### Components and editor
 
 - TextEditor table editing UX improvements
 - Calendar stabilization and future promotion into the core set if appropriate
+  (the v0 family is parked in `frappe-ui/experimental` meanwhile, #1020)
 - deeper component coverage beyond the baseline docs/stories/tests standard
 
 ### Ecosystem

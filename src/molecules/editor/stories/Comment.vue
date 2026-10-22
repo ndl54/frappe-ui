@@ -11,14 +11,14 @@ import {
 } from 'frappe-ui/editor'
 
 const people = [
-  { id: 'faris', label: 'Faris Ansari' },
-  { id: 'mary', label: 'Mary Thomas' },
-  { id: 'alex', label: 'Alex Kim' },
+  { value: 'faris', label: 'Faris Ansari' },
+  { value: 'mary', label: 'Mary Thomas' },
+  { value: 'alex', label: 'Alex Kim' },
 ]
 
 const tags = [
-  { id: 'launch', label: 'launch' },
-  { id: 'design', label: 'design' },
+  { value: 'launch', label: 'launch' },
+  { value: 'design', label: 'design' },
 ]
 
 const extensions = [
@@ -41,7 +41,7 @@ function submit() {
   <div class="w-full max-w-2xl">
     <div class="flex gap-3">
       <div
-        class="flex size-8 shrink-0 items-center justify-center rounded-full bg-surface-gray-3 text-sm font-medium text-ink-gray-7"
+        class="flex size-8 shrink-0 items-center justify-center rounded-full bg-surface-gray-3 text-sm-medium text-ink-gray-7"
       >
         FA
       </div>
@@ -52,7 +52,7 @@ function submit() {
       >
         <template #default="{ isEmpty }">
           <div
-            class="min-w-0 flex-1 rounded-lg border border-outline-gray-2 bg-surface-white focus-within:border-outline-gray-3"
+            class="min-w-0 flex-1 rounded-6 border border-outline-gray-2 bg-surface-base focus-within:border-outline-gray-3"
           >
             <EditorBubbleMenu :items="commentToolbar" />
             <EditorContent
@@ -88,12 +88,12 @@ function submit() {
 
     <div v-if="submitted" class="mt-4 flex gap-3">
       <div
-        class="flex size-8 shrink-0 items-center justify-center rounded-full bg-surface-gray-3 text-sm font-medium text-ink-gray-7"
+        class="flex size-8 shrink-0 items-center justify-center rounded-full bg-surface-gray-3 text-sm-medium text-ink-gray-7"
       >
         FA
       </div>
-      <div class="min-w-0 flex-1 rounded-lg bg-surface-gray-1 px-3 py-2">
-        <div class="mb-0.5 text-sm font-medium text-ink-gray-8">Faris Ansari</div>
+      <div class="min-w-0 flex-1 rounded-6 bg-surface-gray-1 px-3 py-2">
+        <div class="mb-0.5 text-sm-medium text-ink-gray-8">Faris Ansari</div>
         <Editor v-model="submitted" :extensions="extensions" :editable="false">
           <template #default>
             <EditorContent class="text-ink-gray-8" />

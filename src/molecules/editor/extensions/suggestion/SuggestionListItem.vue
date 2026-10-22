@@ -2,7 +2,7 @@
   <button
     type="button"
     :class="[
-      'flex w-full items-center whitespace-nowrap rounded px-2 py-1.5 text-sm text-ink-gray-9',
+      'flex w-full items-center whitespace-nowrap rounded-4 px-2 py-1.5 text-sm text-ink-gray-9',
       selected ? 'bg-surface-gray-2' : '',
       itemClass,
     ]"
@@ -41,6 +41,6 @@ defineEmits<{
 
 const fallbackLabel = computed(() => {
   const item = props.item
-  return item.display ?? item.title ?? item.name ?? ''
+  return item.display ?? item.label ?? item.title ?? item.name ?? ''
 })
 </script>

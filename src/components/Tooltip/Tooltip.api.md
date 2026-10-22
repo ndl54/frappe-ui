@@ -14,28 +14,35 @@
   },
   {
     name: 'hoverDelay',
-    description: 'Delay (in ms) before showing the tooltip on hover.',
+    description: 'Delay in milliseconds before showing the tooltip on hover. Default: `500`.',
     required: false,
     type: 'number',
-    default: '0.5'
+    default: '500'
   },
   {
-    name: 'placement',
-    description: 'Position of the tooltip relative to the trigger.',
+    name: 'side',
+    description: 'Side of the trigger the tooltip is placed on.',
     required: false,
-    type: '"bottom" | "top" | "right" | "left"',
+    type: 'TooltipSide',
     default: '"top"'
   },
   {
-    name: 'arrowClass',
-    description: 'Custom classes applied to the tooltip arrow.',
+    name: 'offset',
+    description: 'Distance in px between the trigger and the tooltip.',
     required: false,
-    type: 'any',
-    default: '"fill-surface-gray-7"'
+    type: 'number',
+    default: '4'
+  },
+  {
+    name: 'bare',
+    description: 'Render `#content` without the bubble shell. The arrow still renders.\nUse it for content that brings its own surface, like an image preview.',
+    required: false,
+    type: 'boolean',
+    default: 'false'
   },
   {
     name: 'disabled',
-    description: 'Disables the tooltip entirely.',
+    description: 'Disables the tooltip entirely. The trigger still renders.',
     required: false,
     type: 'boolean',
     default: 'false'
@@ -45,73 +52,59 @@
   const tooltipSlots = [
   {
     name: 'default',
-    description: 'Default trigger slot.\nWraps the element that the tooltip is attached to.',
-    type: 'any'
-  },
-  {
-    name: 'body',
-    description: 'Slot for fully custom tooltip body.\nReplaces the default tooltip container entirely.',
+    description: 'The trigger. Tooltip is the one overlay whose `#default` is the trigger\nrather than the content — the shorthand `<Tooltip text="…"><Button /></Tooltip>`\nis the overwhelmingly common shape, and `#content` names the other half.',
     type: 'any'
   },
   {
     name: 'content',
-    description: 'Slot for tooltip content text.\nUsed inside the default tooltip body.',
+    description: 'The tooltip\'s content. Takes precedence over `text`.',
     type: 'any'
   }
 ]
 
-  const tooltipBubbleProps = [
+  const tooltipProviderProps = [
   {
-    name: 'side',
-    description: 'Preferred popover side relative to the trigger.',
+    name: 'hoverDelay',
+    description: 'Delay in milliseconds before the first tooltip in the group opens.',
     required: false,
-    type: '"bottom" | "top" | "right" | "left"',
-    default: '"top"'
+    type: 'number',
+    default: '500'
   },
   {
-    name: 'text',
-    description: 'Text content when neither `#content` nor `#body` is provided.',
+    name: 'skipDelay',
+    description: 'Window in milliseconds during which moving to another trigger in this\ngroup opens its tooltip with no delay. Mirrors reka\'s\n`skipDelayDuration`.',
     required: false,
-    type: 'string'
+    type: 'number',
+    default: '300'
   },
   {
-    name: 'arrowClass',
-    description: 'Fill class for the arrow — defaults to match the bubble shell.',
+    name: 'disableHoverableContent',
+    description: 'When `true`, hovering the tooltip body closes it as the pointer\nleaves the trigger.',
     required: false,
-    type: 'string',
-    default: '"fill-surface-gray-7"'
+    type: 'boolean',
+    default: 'false'
   }
 ]
 
-  const tooltipBubbleSlots = [
+  const tooltipProviderSlots = [
   {
     name: 'default',
-    description: 'Replaces just the text inside the standard bubble.',
-    type: 'any'
-  },
-  {
-    name: 'content',
-    description: 'Replaces just the text inside the standard bubble.',
-    type: 'any'
-  },
-  {
-    name: 'body',
-    description: 'Replaces the entire bubble (including its shell) — arrow still renders.',
-    type: 'any'
+    description: '',
+    type: '{}'
   }
 ]
 </script>
+
 ## API Reference
 
 ### Tooltip
 
-<PropsTable name="Tooltip" :data="tooltipProps"/> 
+<PropsTable name="Tooltip" :data="tooltipProps"/>
 
-<SlotsTable :data="tooltipSlots"/> 
+<SlotsTable :data="tooltipSlots"/>
 
-### TooltipBubble
+### TooltipProvider
 
-<PropsTable folder="Tooltip" name="TooltipBubble" :data="tooltipBubbleProps"/> 
+<PropsTable folder="Tooltip" name="TooltipProvider" :data="tooltipProviderProps"/>
 
-<SlotsTable :data="tooltipBubbleSlots"/> 
-
+<SlotsTable :data="tooltipProviderSlots"/>

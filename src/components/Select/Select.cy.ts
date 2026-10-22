@@ -12,7 +12,6 @@ describe('Select', () => {
     cy.get('[role=combobox]')
       .should('have.attr', 'aria-expanded', 'false')
       .and('have.class', 'text-left')
-      .and('have.class', 'focus-visible:ring-2')
     cy.get('[role=presentation]').should('not.exist')
 
     cy.get('button').click()
@@ -28,10 +27,10 @@ describe('Select', () => {
 
   it('sizes', () => {
     const classes = {
+      xs: 'min-h-6',
       sm: 'min-h-7',
       md: 'min-h-8',
       lg: 'min-h-10',
-      xl: 'min-h-10',
     }
 
     for (const size in classes) {
@@ -39,6 +38,24 @@ describe('Select', () => {
       cy.get('button').click()
       cy.get('[role=option]').should('have.class', classes[size])
     }
+  })
+
+  it('renders the trigger at the accepted single-line heights', () => {
+    const heights = { xs: 24, sm: 28, md: 32, lg: 40 }
+
+    for (const [size, height] of Object.entries(heights)) {
+      cy.mount(Select, { props: { options, size } })
+      cy.get('[role=combobox]').should(($el) => {
+        expect($el[0].getBoundingClientRect().height).to.equal(height)
+      })
+    }
+  })
+
+  it('falls back to sm geometry for a size outside the union', () => {
+    cy.mount(Select, { props: { options, size: 'xl' as never } })
+    cy.get('[role=combobox]').should(($el) => {
+      expect($el[0].getBoundingClientRect().height).to.equal(28)
+    })
   })
 
   it('v-model', () => {
@@ -63,7 +80,7 @@ describe('Select', () => {
       slots: {
         prefix: h('span', { 'data-cy': 'prefix' }, 'prefix'),
         suffix: h('span', { 'data-cy': 'suffix' }, 'suffix'),
-        option: h('span', { 'data-cy': 'option' }, 'option'),
+        'item-label': h('span', { 'data-cy': 'item-label' }, 'label'),
         footer: h('span', { 'data-cy': 'footer' }, 'footer'),
       },
     })
@@ -73,8 +90,131 @@ describe('Select', () => {
 
     cy.get('button').click()
 
-    cy.get('[data-cy="option"]').should('exist')
+    cy.get('[data-cy="item-label"]').should('exist')
     cy.get('[data-slot="footer"]').find('[data-cy="footer"]').should('exist')
+  })
+
+  it('renders a data-slot="chevron" indicator by default', () => {
+    cy.mount(Select, { props: { options } })
+    cy.get('[data-slot="trigger"] [data-slot="chevron"]').should('exist')
+  })
+
+  it('#item replaces the entire option row', () => {
+    cy.mount(Select, {
+      props: { options, modelValue: 'def' },
+      slots: {
+        item: ({ item, selected }: any) =>
+          h(
+            'div',
+            { 'data-cy': 'custom-item', 'data-selected': String(selected) },
+            item.label,
+          ),
+      },
+    })
+
+    cy.get('[role=combobox]').click()
+    cy.get('[data-cy="custom-item"]').should('have.length', options.length)
+    // The default row shell is gone when #item takes over.
+    cy.get('[role=option]')
+      .first()
+      .find('[data-slot="item-list-row"]')
+      .should('not.exist')
+    cy.get('[data-cy="custom-item"]')
+      .eq(1)
+      .should('have.attr', 'data-selected', 'true')
+  })
+
+  it('a per-option slot wins over the generic #item slot', () => {
+    cy.mount(Select, {
+      props: {
+        options: [
+          { label: 'Plain', value: 'plain' },
+          { label: 'Special', value: 'special', slot: 'special' },
+        ],
+      },
+      slots: {
+        item: () => h('div', { 'data-cy': 'generic-item' }, 'generic'),
+        'item-special': () =>
+          h('div', { 'data-cy': 'special-item' }, 'special'),
+      },
+    })
+
+    cy.get('[role=combobox]').click()
+    cy.get('[data-cy="generic-item"]').should('have.length', 1)
+    cy.get('[data-cy="special-item"]').should('have.length', 1)
+  })
+
+  it('exposes clear() and focus()', () => {
+    const Harness = defineComponent({
+      setup() {
+        const selectRef = ref<any>(null)
+        const value = ref('def')
+
+        return () =>
+          h('div', [
+            h(Select, {
+              ref: selectRef,
+              options,
+              modelValue: value.value,
+              'onUpdate:modelValue': (next: any) => {
+                value.value = next
+              },
+            }),
+            h(
+              'button',
+              { 'data-cy': 'clear', onClick: () => selectRef.value?.clear() },
+              'Clear',
+            ),
+            h(
+              'button',
+              {
+                'data-cy': 'focus',
+                onClick: () => selectRef.value?.focus({ preventScroll: true }),
+              },
+              'Focus',
+            ),
+          ])
+      },
+    })
+
+    cy.mount(Harness)
+
+    cy.get('[role=combobox]').should('have.text', 'def')
+    cy.get('[data-cy="clear"]').click()
+    cy.get('[role=combobox]').should('have.text', 'Select option')
+
+    cy.get('[data-cy="focus"]').click()
+    cy.get('[role=combobox]').should('have.focus')
+  })
+
+  it('#footer receives the control slot props', () => {
+    cy.mount(Select, {
+      props: { options, modelValue: 'def' },
+      slots: {
+        footer: ({ selectedOption, clear, close }: any) =>
+          h('div', [
+            h('span', { 'data-cy': 'footer-label' }, selectedOption?.label),
+            h('button', { 'data-cy': 'footer-clear', onClick: clear }, 'Clear'),
+            h('button', { 'data-cy': 'footer-close', onClick: close }, 'Close'),
+          ]),
+      },
+    })
+
+    cy.get('[role=combobox]').click()
+    cy.get('[data-cy="footer-label"]').should('have.text', 'def')
+    cy.get('[data-cy="footer-clear"]').click()
+    cy.get('[data-cy="footer-label"]').should('have.text', '')
+    cy.get('[data-cy="footer-close"]').click()
+    cy.get('[data-slot="content"]').should('not.exist')
+  })
+
+  it('switches to popper placement when a positioning prop is set', () => {
+    cy.mount(Select, {
+      props: { options, side: 'bottom', align: 'start', offset: 4 },
+    })
+
+    cy.get('[role=combobox]').click()
+    cy.get('[data-slot="content"]').should('have.attr', 'data-side', 'bottom')
   })
 
   it('normalizes mixed string and object options', () => {
@@ -124,20 +264,24 @@ describe('Select', () => {
     cy.get('[role=combobox]').should('contain.text', 'Sentinel-like')
   })
 
-  it('sizes the trigger to the widest option by default', () => {
+  it('sizes the trigger to the selected value, not the widest option', () => {
+    // Both selects share the same options, so a widest-option strategy would
+    // make them equal width. Instead the trigger hugs the *selected value*:
+    // the one showing the longer value is wider, and the dropdown expands
+    // outward to fit the rest.
     const WidthHarness = defineComponent({
       setup() {
         return () =>
           h('div', { class: 'flex items-start gap-6' }, [
             h(Select, {
-              options: ['Short'],
+              options: ['Short', 'A much longer option label'],
               modelValue: 'Short',
-              'data-cy': 'short-select',
+              'data-cy': 'short-value-select',
             }),
             h(Select, {
               options: ['Short', 'A much longer option label'],
-              modelValue: 'Short',
-              'data-cy': 'long-select',
+              modelValue: 'A much longer option label',
+              'data-cy': 'long-value-select',
             }),
           ])
       },
@@ -145,10 +289,10 @@ describe('Select', () => {
 
     cy.mount(WidthHarness)
 
-    cy.get('[data-cy="short-select"]').then(($short) => {
+    cy.get('[data-cy="short-value-select"]').then(($short) => {
       const shortWidth = $short[0].getBoundingClientRect().width
 
-      cy.get('[data-cy="long-select"]').should(($long) => {
+      cy.get('[data-cy="long-value-select"]').should(($long) => {
         const longWidth = $long[0].getBoundingClientRect().width
         expect(longWidth).to.be.greaterThan(shortWidth)
       })
@@ -209,34 +353,48 @@ describe('Select', () => {
         modelValue: 'def',
       },
       slots: {
-        trigger: ({ displayValue }) =>
+        trigger: ({ selectedOption }: any) =>
           h(
             'div',
             { 'data-cy': 'trigger-content' },
-            displayValue || 'Pick one',
+            selectedOption?.label || 'Pick one',
           ),
       },
     })
 
     cy.get('[data-cy="trigger-content"]').should('have.text', 'def')
     cy.get('[role=combobox]').click()
-    cy.get('[data-slot="content-body"]').should(
-      'have.attr',
-      'data-motion',
-      'animated',
-    )
     cy.get('[data-slot="content"]')
       .parent()
       .should('have.attr', 'style')
       .and('include', 'min-width')
   })
 
-  it('skips content animation for keyboard-opened interactions', () => {
+  it('publishes no data-slot for the custom-trigger measurement overlay', () => {
+    // The invisible SelectValue overlay is internal plumbing for reka's
+    // item-aligned measurement. It must stay in the DOM but must not carry a
+    // public marker — see src/components/shared/selection/types.ts.
+    cy.mount(Select, {
+      props: { options, modelValue: 'def' },
+      slots: {
+        trigger: () => h('div', { 'data-cy': 'trigger-content' }, 'Pick one'),
+      },
+    })
+
+    cy.get('[data-slot="trigger-value"]').should('not.exist')
+    // The overlay element itself is still there, doing its job.
+    cy.get('[data-slot="trigger"] [aria-hidden="true"]').should('exist')
+  })
+
+  it('opens without an enter/exit animation (instant motion)', () => {
+    // The menu is anchored item-aligned over the trigger, so a
+    // scale-from-trigger entrance would read as a glitch. Both pointer and
+    // keyboard opens use the `instant` rhythm (opacity-only, no scale).
     cy.mount(Select, {
       props: { options },
     })
 
-    cy.get('[role=combobox]').focus().trigger('keydown', { key: 'Enter' })
+    cy.get('[role=combobox]').click()
     cy.get('[data-slot="content-body"]').should(
       'have.attr',
       'data-motion',
@@ -448,6 +606,93 @@ describe('Select', () => {
       cy.mount(Select, { props: { options } })
       cy.get('[data-slot="trigger"]').should('exist')
       cy.get('label').should('not.exist')
+    })
+  })
+
+  // INP-Q2: one empty value for the single-value half of the family.
+  describe('the empty value is null', () => {
+    it('clear() emits null, not undefined', () => {
+      const onUpdate = cy.spy().as('onUpdate')
+      cy.mount(Select, {
+        props: { options, modelValue: 'def', 'onUpdate:modelValue': onUpdate },
+      }).then((mounted: any) => {
+        const vm = mounted.component ?? mounted.wrapper?.vm ?? mounted
+        vm?.clear?.()
+      })
+
+      cy.get('@onUpdate').should('have.been.calledOnce')
+      cy.get('@onUpdate').should('have.been.calledWith', null)
+      cy.get('@onUpdate').then((spy: any) => {
+        expect(spy.firstCall.args[0]).to.be.null
+      })
+    })
+
+    it('the #trigger slot clear() emits null too', () => {
+      const onUpdate = cy.spy().as('onUpdate')
+      cy.mount(Select, {
+        props: { options, modelValue: 'def', 'onUpdate:modelValue': onUpdate },
+        slots: {
+          trigger: ({ clear }: any) =>
+            h('button', { 'data-cy': 'slot-clear', onClick: clear }, 'Clear'),
+        },
+      })
+
+      cy.get('[data-cy="slot-clear"]').click()
+      cy.get('@onUpdate').then((spy: any) => {
+        expect(spy.firstCall.args[0]).to.be.null
+      })
+    })
+
+    it('leaves an untouched model alone', () => {
+      // A `defineModel` default is local to the child, so writing one here
+      // would leave a parent `v-model` on `undefined` while this component
+      // read `null`, and a caller watching for `null` would never fire.
+      const onUpdate = cy.spy().as('onUpdate')
+      cy.mount(Select, {
+        props: { options, modelValue: undefined, 'onUpdate:modelValue': onUpdate },
+      })
+
+      cy.get('[role=combobox]').should('have.text', 'Select option')
+      cy.get('@onUpdate').should('not.have.been.called')
+    })
+
+    it('emits null from clear even when the model started undefined', () => {
+      const onUpdate = cy.spy().as('onUpdate')
+      cy.mount(Select, {
+        props: { options, modelValue: undefined, 'onUpdate:modelValue': onUpdate },
+      }).then((mounted: any) => {
+        const vm = mounted.component ?? mounted.wrapper?.vm ?? mounted
+        vm?.clear?.()
+      })
+
+      cy.get('@onUpdate').should('have.been.calledOnce')
+      cy.get('@onUpdate').then((spy: any) => {
+        expect(spy.firstCall.args[0]).to.be.null
+      })
+    })
+
+    it('renders the placeholder for null and for undefined alike', () => {
+      cy.mount(Select, { props: { options, modelValue: null } })
+      cy.get('[role=combobox]').should('have.text', 'Select option')
+
+      cy.mount(Select, { props: { options, modelValue: undefined } })
+      cy.get('[role=combobox]').should('have.text', 'Select option')
+    })
+
+    it('still round-trips an empty string as a real value', () => {
+      const withNone = [{ label: 'None', value: '' }, ...options]
+      const onUpdate = cy.spy().as('onUpdate')
+      cy.mount(Select, {
+        props: {
+          options: withNone,
+          modelValue: 'def',
+          'onUpdate:modelValue': onUpdate,
+        },
+      })
+
+      cy.get('[role=combobox]').click()
+      cy.get('[role=option]').contains('None').click()
+      cy.get('@onUpdate').should('have.been.calledWith', '')
     })
   })
 })

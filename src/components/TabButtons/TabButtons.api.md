@@ -3,19 +3,68 @@
   import PropsTable from '@/components/Docs/PropsTable.vue'
   import SlotsTable from '@/components/Docs/SlotsTable.vue'
   import EmitsTable from '@/components/Docs/EmitsTable.vue'
+  import ExposedTable from '@/components/Docs/ExposedTable.vue'
 
   const propsData = [
   {
-    name: 'buttons',
-    description: '',
-    required: true,
+    name: 'options',
+    description: 'List of options to render.',
+    required: false,
     type: 'TabButton[]'
   },
   {
     name: 'modelValue',
     description: '',
     required: false,
-    type: 'TabButtonValue'
+    type: 'TabValue'
+  },
+  {
+    name: 'variant',
+    description: 'Visual variant, shared with the Tabs family.',
+    required: false,
+    type: 'TabsVariant',
+    default: '"subtle"'
+  },
+  {
+    name: 'size',
+    description: '',
+    required: false,
+    type: 'TabsSize',
+    default: '"sm"'
+  },
+  {
+    name: 'vertical',
+    description: '',
+    required: false,
+    type: 'boolean',
+    default: 'false'
+  },
+  {
+    name: 'edge',
+    description: 'browser-tab + vertical only: the edge of the list the tabs attach to.\n`start` is the left edge in left-to-right text.',
+    required: false,
+    type: 'TabsEdge',
+    default: '"start"'
+  },
+  {
+    name: 'fluid',
+    description: 'Buttons stretch to fill the container width.',
+    required: false,
+    type: 'boolean',
+    default: 'false'
+  }
+]
+
+  const slotsData = [
+  {
+    name: 'prefix',
+    description: 'Slot before the tab button label.',
+    type: '{ button: TabButton; active: boolean; disabled: boolean; }'
+  },
+  {
+    name: 'suffix',
+    description: 'Slot after the tab button label.',
+    type: '{ button: TabButton; active: boolean; disabled: boolean; }'
   }
 ]
 
@@ -23,13 +72,25 @@
   {
     name: 'update:modelValue',
     description: 'Fired when the model value changes.',
-    type: '[value: TabButtonValue | undefined]'
+    type: '[value: TabValue]'
+  }
+]
+
+  const exposedData = [
+  {
+    name: 'focus',
+    description: 'Moves focus to the selected tab, or to the first enabled tab when nothing\nis selected. That is the tab `Tab` reaches, since the group is one tab\nstop. Disabled tabs are skipped, so a group with no enabled tab does\nnothing.',
+    type: '(options?: FocusOptions) => void'
   }
 ]
 </script>
+
 ## API Reference
 
-<PropsTable name="TabButtons" :data="propsData"/> 
+<PropsTable name="TabButtons" :data="propsData"/>
 
-<EmitsTable :data="emitsData"/> 
+<SlotsTable :data="slotsData"/>
 
+<EmitsTable :data="emitsData"/>
+
+<ExposedTable :data="exposedData"/>

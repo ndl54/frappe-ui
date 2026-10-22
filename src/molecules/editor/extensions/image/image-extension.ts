@@ -15,23 +15,25 @@ import {
 } from '@tiptap/core'
 import type { Editor } from '@tiptap/core'
 import { VueNodeViewRenderer } from '@tiptap/vue-3'
-import type { UploadedFile } from '#utils/useFileUpload'
 import MediaNodeView from '#molecules/editor/components/MediaNodeView.vue'
 import { createMediaPlugin } from '#molecules/editor/extensions/shared/media-plugin'
+import { captionAttribute } from '#molecules/editor/extensions/shared/media-attributes'
 import { pickFiles } from '#molecules/editor/extensions/shared/file-picker'
 import { openImageGroupUploadDialog } from '#molecules/editor/extensions/image-group/imageGroupDialogController'
 import {
   resolveUploadOptions as resolveUploadOptionsBase,
   type MediaUploadOptions,
+  type UploadFunction,
 } from '#molecules/editor/extensions/shared/media-upload-engine'
 import { imageEngine, imageUploadConfig } from './image-engine'
 
 export interface ImageExtensionOptions {
   /**
-   * Function to handle image uploads
+   * Function to handle image uploads. Receives optional request options
+   * (abort signal + progress callback) as the second argument.
    * @default null
    */
-  uploadFunction: ((file: File) => Promise<UploadedFile>) | null
+  uploadFunction: UploadFunction | null
 
   /**
    * HTML attributes to add to the image element
@@ -42,7 +44,10 @@ export interface ImageExtensionOptions {
 
 export interface SetImageOptions {
   src: string
+  /** Screen-reader description. Not shown on screen. */
   alt?: string
+  /** Visible caption rendered under the image. */
+  caption?: string
   title?: string
   width?: string | number | null
   height?: string | number | null
@@ -85,7 +90,16 @@ export const ImageExtension = NodeExtension.create<ImageExtensionOptions>({
   addAttributes() {
     return {
       src: { default: null },
+      /**
+       * Screen-reader description. Never rendered as visible text, and never
+       * touched by the caption UI, so an existing `alt` round-trips as it is.
+       */
       alt: { default: null },
+      caption: captionAttribute,
+      /**
+       * Native `title` tooltip. Filled by the markdown input rule
+       * (`![alt](src "title")`) and round-tripped, but it has no UI of its own.
+       */
       title: { default: null },
       width: { default: null },
       height: { default: null },
@@ -136,23 +150,10 @@ export const ImageExtension = NodeExtension.create<ImageExtensionOptions>({
     }
   },
 
+  // Every attribute is read by its own `parseHTML` (TipTap injects those into
+  // the rule and they take precedence), so the rule itself only has to match.
   parseHTML() {
-    return [
-      {
-        tag: 'img[src]',
-        getAttrs: (node) => {
-          if (typeof node === 'string') return {}
-          const element = node as HTMLElement
-          return {
-            src: element.getAttribute('src'),
-            alt: element.getAttribute('alt'),
-            title: element.getAttribute('title'),
-            width: element.getAttribute('width'),
-            height: element.getAttribute('height'),
-          }
-        },
-      },
-    ]
+    return [{ tag: 'img[src]' }]
   },
 
   renderHTML({ HTMLAttributes }) {
@@ -212,14 +213,16 @@ export const ImageExtension = NodeExtension.create<ImageExtensionOptions>({
       selectAndUploadImage:
         () =>
         ({ editor }) => {
-          void pickFiles({ accept: 'image/*', multiple: true }).then((files) => {
-            if (editor.isDestroyed || files.length === 0) return
-            if (files.length === 1) {
-              editor.commands.uploadImage(files[0])
-            } else {
-              openImageGroupUploadDialog({ editor, files })
-            }
-          })
+          void pickFiles({ accept: 'image/*', multiple: true }).then(
+            (files) => {
+              if (editor.isDestroyed || files.length === 0) return
+              if (files.length === 1) {
+                editor.commands.uploadImage(files[0])
+              } else {
+                openImageGroupUploadDialog({ editor, files })
+              }
+            },
+          )
           return true
         },
 
@@ -235,6 +238,21 @@ export const ImageExtension = NodeExtension.create<ImageExtensionOptions>({
             return false
           }
           void imageEngine.reupload(editor, pos, resolve(editor))
+          return true
+        },
+
+      replaceImage:
+        (pos: number, file: File) =>
+        ({ editor }: { editor: Editor }) => {
+          const node = editor.view.state.doc.nodeAt(pos)
+          if (!node || node.type.name !== this.name) return false
+          void imageEngine.uploadReplace(
+            file,
+            editor,
+            pos,
+            resolve(editor),
+            node.attrs,
+          )
           return true
         },
     }

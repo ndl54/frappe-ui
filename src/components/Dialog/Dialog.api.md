@@ -9,15 +9,13 @@
     name: 'open',
     description: 'Controls whether the dialog is open (v-model:open). Canonical.',
     required: false,
-    type: 'boolean',
-    default: 'undefined'
+    type: 'boolean'
   },
   {
     name: 'modelValue',
     description: 'Controls whether the dialog is open (v-model). Also supported.',
     required: false,
-    type: 'boolean',
-    default: 'undefined'
+    type: 'boolean'
   },
   {
     name: 'title',
@@ -33,23 +31,29 @@
   },
   {
     name: 'icon',
-    description: 'Icon shown next to the title in the auto-header.',
+    description: 'Icon shown next to the title in the auto-header. A `lucide-*` class name\nor a Vue component. Its badge takes its tone from `theme`.',
     required: false,
-    type: 'string | DialogIcon'
+    type: 'string | Component'
+  },
+  {
+    name: 'theme',
+    description: 'Tone of the header icon badge: `amber`, `blue`, `red` or `green`.\nUnset renders the neutral gray badge.',
+    required: false,
+    type: 'DialogTheme'
   },
   {
     name: 'size',
     description: 'Max-width size of the dialog. Default `\'lg\'`.',
     required: false,
     type: 'DialogSize',
-    default: 'undefined'
+    default: '"lg"'
   },
   {
     name: 'position',
     description: 'Vertical placement. Default `\'center\'`.',
     required: false,
     type: 'DialogPosition',
-    default: 'undefined'
+    default: '"center"'
   },
   {
     name: 'paddingTop',
@@ -83,21 +87,6 @@
     required: false,
     type: 'boolean',
     default: 'false'
-  },
-  {
-    name: 'disableOutsideClickToClose',
-    description: '',
-    required: false,
-    type: 'boolean',
-    default: 'undefined',
-    deprecated: 'Use `dismissible` (inverted) instead.'
-  },
-  {
-    name: 'options',
-    description: '',
-    required: false,
-    type: 'DialogOptions',
-    deprecated: 'Use flat top-level props instead.'
   }
 ]
 
@@ -116,67 +105,37 @@
     name: 'actions',
     description: 'Footer override; exposes `{ close, actions }`.',
     type: 'DialogActionsSlotProps'
-  },
-  {
-    name: 'body',
-    description: '',
-    type: 'any',
-    deprecated: 'Use `#default` + `bare` prop.'
-  },
-  {
-    name: 'body-main',
-    description: '',
-    type: 'any',
-    deprecated: 'Use `#default`.'
-  },
-  {
-    name: 'body-header',
-    description: '',
-    type: 'any',
-    deprecated: 'Use `#title` for extras (no direct replacement).'
-  },
-  {
-    name: 'body-title',
-    description: '',
-    type: 'any',
-    deprecated: 'Use `#title`.'
-  },
-  {
-    name: 'body-content',
-    description: '',
-    type: 'any',
-    deprecated: 'Use `#default`.'
   }
 ]
 
   const emitsData = [
   {
-    name: 'update:modelValue',
-    description: 'Fired when the model value changes.',
-    type: '[value: boolean]'
-  },
-  {
     name: 'update:open',
-    description: 'Fired when the open state changes.',
+    description: 'Fired when the dialog open state changes via `v-model:open`.',
     type: '[value: boolean]'
-  },
-  {
-    name: 'close',
-    description: 'Fired when the component closes.',
-    type: '[]'
   },
   {
     name: 'after-leave',
-    description: '',
+    description: 'Fired after the close animation finishes.',
     type: '[]'
+  },
+  {
+    name: 'close',
+    description: 'Fired when the dialog transitions to closed.',
+    type: '[]'
+  },
+  {
+    name: 'update:modelValue',
+    description: 'Fired when the dialog open state changes via `v-model`.',
+    type: '[value: boolean]'
   }
 ]
 </script>
+
 ## API Reference
 
-<PropsTable name="Dialog" :data="propsData"/> 
+<PropsTable name="Dialog" :data="propsData"/>
 
-<SlotsTable :data="slotsData"/> 
+<SlotsTable :data="slotsData"/>
 
-<EmitsTable :data="emitsData"/> 
-
+<EmitsTable :data="emitsData"/>

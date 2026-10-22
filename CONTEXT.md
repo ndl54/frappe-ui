@@ -1,139 +1,313 @@
 # frappe-ui
 
-A Vue 3 component library for Frappe-based apps. This document captures the vocabulary used inside the library so that component APIs, docs, and stories stay aligned with the language used in the v1 plan and spec docs.
+A Vue 3 component library for Frappe-based apps. This document is the **vocabulary**
+the library's APIs, docs, and stories share — the canonical meaning of cross-cutting
+terms (`open`, `variant`, `theme`, `dismissible`, `atom`, …) and the names to avoid.
 
-The cross-cutting **design rules** that govern API shape live in [`PHILOSOPHY.md`](./PHILOSOPHY.md) (cite as `P1`–`P13`). This doc is the vocabulary the rules use.
+The design **rules** that use this vocabulary live in [`PHILOSOPHY.md`](./PHILOSOPHY.md)
+(`P1`–`P15`). Per-component **API contracts** live in [`spec/`](./spec/) — this doc
+defines terms, not APIs. Release execution and history live in
+[`v1-release/`](./v1-release/). The published docs in `docs/` are the vitepress site
+and host neither specs nor ADRs.
 
-Current API contracts live in [`spec/`](./spec/). Release execution, migration notes, changelog, and temporary research live in [`v1-release/`](./v1-release/). The user-facing documentation in `docs/` is the published vitepress site and intentionally does not host specs or ADRs.
+[`spec/README.md`](./spec/README.md) ranks these documents and carries two rules
+that apply here too. A decision accepted later supersedes the older text, and has
+to be promoted into the spec — or into this file, when it is a name — rather than
+left in the thread that decided it. Shipped code is evidence of what a contract
+says, never the contract itself.
 
-## Language
-
-### Composition
+## Composition
 
 **atom**:
-A primitive component that does not compose other public components — e.g. `TextInput`, `Combobox`, `Switch`, `Select`. Atoms are the smallest reusable units of the library and live in `src/components/`.
+A primitive component that does not compose other public components — e.g. `TextInput`,
+`Combobox`, `Switch`, `Select`. The smallest reusable units; live in `src/components/`.
 
 **molecule**:
-A component that composes one or more atoms to form a higher-level control — e.g. `Link` (composes `Combobox`). Molecules expose their own public API and follow the same library-wide design rules as atoms (P5 labeling, P10 styling, etc.). Molecules may live in `src/components/` *or* in domain-specific directories (e.g. `frappe/` for Frappe-integrated controls) — location is a deployment concern, not a definitional one.
+A component that composes atoms into a higher-level control — e.g. `Link` (composes
+`Combobox`). Follows the same design rules as atoms (P5 labeling, P10 styling, …). May
+live in `src/components/` or a domain dir (e.g. `frappe/` for Frappe-integrated controls).
 
-### Component lifecycle & control
+**slots (reading your own)**:
+A component that reads its own slots outside the template takes them from
+`useReactiveSlots()`, never `useSlots()`. Vue mutates `instance.slots` in place
+and does not track it, so a `computed` over `useSlots()` caches whichever slots
+were filled at mount. Reading `$slots` in your own template is already correct;
+handing the object to a child (as a prop, or through `provide`) is not, because
+the child re-reads it only when something else re-renders the child.
+
+## Lifecycle & control
 
 **open**:
-The visibility state of an overlay component (Dialog, Popover, Dropdown, Tooltip). Always bound via `v-model:open`. Boolean.
+The visibility state of an overlay (Dialog, Popover, Dropdown, Tooltip), always bound
+via `v-model:open`. Boolean. All four overlays share this vocabulary.
 _Avoid_: visible, show, isOpen (as a public API; internal refs are fine)
 
 **modelValue**:
-Reserved for the **primary value** a component represents (selected option, text content, etc.). For overlay components, `modelValue` is *not* the visibility — visibility is `open`.
-_Avoid_: using `v-model` (bare) for visibility on overlay components
+The **primary value** a component represents (selected option, text content, …). For
+overlays, `modelValue` is *not* the visibility — that's `open`.
+_Avoid_: using bare `v-model` for visibility on overlays
 
-**dismissable**:
-Whether the overlay closes via user-initiated dismiss channels — outside click and Escape. Default `true`. When `false`, the overlay can only be closed programmatically or via an explicit close control (e.g. a close button or an action). The name is chosen with cross-overlay reuse in mind (Popover, Dropdown), but in v1 it ships **only on Dialog**. Replaces `disableOutsideClickToClose`, which remains a deprecated alias on Dialog with a one-time warning.
-_Avoid_: `disableOutsideClickToClose`, `closeOnOutsideClick` (in new code)
+**dismissible**:
+Whether an overlay closes via user-initiated dismiss channels — outside click and
+Escape. Default `true`; when `false`, it closes only programmatically or via an explicit
+control. Ships on `Dialog`, `Popover` and `BottomSheet`. On `Alert` (not an overlay)
+it instead shows the × button (default `false`), which emits `dismiss` — the parent
+owns hiding. Replaces `disableOutsideClickToClose`, which is removed (ADR-0008).
+_Avoid_: `disableOutsideClickToClose`, `closeOnOutsideClick`
 
-### Dialog
+## Color axes
 
-**bare**:
-A Dialog prop (default `false`) that suppresses the dialog's default chrome — the padded card, auto-rendered header, and auto-rendered actions footer. With `bare: true`, the `#default` slot fills the entire modal shell. Used for command palettes, full-screen settings, and other layouts that don't fit "header + padded content + footer".
-_Avoid_: `flush`, `chromeless`, `unstyled` (in new code)
+The only two axes used to color components — there is intentionally **no** semantic axis
+(`intent`/`severity`/`appearance`/`kind`/`status`):
 
-**chrome** (informal):
-The auto-rendered visual scaffolding around a Dialog's content — padded card background, header row (icon + title + close button), and actions footer container. Not exposed as an API term; this is the thing `bare` removes.
+- **variant** — visual style: `solid | outline | subtle | ghost` (Button, Badge)
+- **theme** — color tone, by color name: `gray | blue | green | amber | red | …` (Button, Badge, Alert, Dialog; the Alert/SidebarCard palette is `gray | blue | green | amber | red`)
 
-**Dialog**:
-The single modal overlay component. Traps focus, blocks interaction with the page, and is always portalled. ARIA semantics are derived from props:
-- `role="dialog"` always (we do not differentiate `alertdialog`; the role distinction is rarely surfaced by screen readers in practice and the simplification avoids fragile heuristics)
-- `aria-labelledby` ← `title` (or the custom `#body-title` slot's container, when used)
-- `aria-describedby` ← `message`
+The warning tone is **`amber`** everywhere. No exported component accepts
+`theme="yellow"` — Dialog was the last one and moved to `amber` (#1054).
+_Avoid_: `yellow`
 
-A non-dismissable Dialog is still `role="dialog"` — "must respond" is expressed by `dismissable: false` and explicit actions, not by a different role.
+Badge themes are `gray | blue | green | amber | red | violet`.
+_Avoid_ (Badge): `orange` — an alias for `amber`, removed in `1.0.0` (ADR-0008)
 
-**Imperative dialog API**:
-A `dialog` namespace exporting callback-based helpers: `dialog.confirm()`, `dialog.danger()`, `dialog.prompt()`. Each helper mounts a `<Dialog>` for one-shot confirms/prompts outside normal component templates. Replaces the legacy `confirmDialog()` helper.
+A legacy `appearance` (`warning | info | danger | success`) maps to `theme` color names.
 
-Mounting is handled by `<FrappeUIProvider>`, which renders a hidden `<Dialogs />` next to `<Toasts />` so imperative dialogs inherit `provide/inject` (router, Pinia, theme, etc.) from the host app. The `<Dialogs />` component remains exported for callers who don't use the provider and want to mount it manually.
+**theme** means color tone and nothing else. It is the library's most-used
+vocabulary word — roughly 300 `theme="…"` sites across the apps — so the
+light/dark axis gets its own word rather than competing for this one.
 
-**Lifecycle contract**: `onConfirm` resolving auto-closes the dialog; throwing keeps it open and renders the thrown message inline. Each helper returns a synchronous handle with `close()` for programmatic dismissal. See [`spec/dialog.md`](./spec/dialog.md) and [`spec/adr/0003-imperative-dialog-onconfirm.md`](./spec/adr/0003-imperative-dialog-onconfirm.md).
+**colorScheme**:
+The light/dark axis: `light | dark | system`. Owned by the `useColorScheme`
+composable, which is the only writer — `colorScheme` itself is read-only,
+because the ref, the `<html data-theme>` attribute and the stored preference
+have to move together and `setColorScheme` is what moves all three.
+_Avoid_: `theme`, `currentTheme`, `darkMode`, `mode` (for light/dark)
 
-**PromptField** (the schema for `dialog.prompt`'s `fields` array):
-```ts
-type PromptField = {
-  name: string                                              // result key
-  label?: string
-  type?: 'text' | 'textarea' | 'select' | 'checkbox'        // default 'text'
-  defaultValue?: string | boolean
-  placeholder?: string
-  required?: boolean                                        // only validation supported in v1
-  options?: Array<{ label: string; value: string }>         // for 'select'
-  description?: string                                      // helper text under label
-}
-```
-Custom `validate` callbacks are intentionally not in v1 — callers needing custom validation should compose a real form inside `<Dialog>`. `dialog.prompt` resolves to `null` on cancel/dismiss.
+> The `data-theme` DOM attribute and the `theme` `localStorage` key keep the
+> older word. Apps ship `[data-theme='dark']` rules in their own CSS and users
+> have a saved value under that key; both are outside our API, and renaming
+> either would break running apps with no compile error.
 
-**theme** (Dialog & imperative API): The color tone of the icon and the primary action button. Values match `Alert.theme`: `'yellow' | 'blue' | 'red' | 'green'`. The imperative helpers also use `theme` to pick a sensible default icon (overridable via `icon`).
+## Shared component vocabulary
 
-Cross-library vocabulary (the only two axes used to color components):
-- **variant** = visual style (`solid | outline | subtle | ghost`) — Button, Badge, Alert
-- **theme** = color tone (color names) — Button, Badge, Alert, Dialog
-
-There is intentionally no semantic axis (no `intent`/`severity`/`appearance` taxonomy) — when `Dialog.icon.appearance` (`warning|info|danger|success`) is migrated, it maps to `theme` color names (`yellow|blue|red|green`).
-
-**options** (Dialog-only, legacy):
-A blob prop that bundled title/size/icon/actions/message/position into one object. Retained for back-compat in v1, but the canonical surface is now flat top-level props. Setting `options` triggers a one-time deprecation warning.
-_Avoid_: as the recommended public API for new code
+**route / href**:
+Navigation-capable components call a Vue Router destination `route` and a plain
+external URL `href`. When both are supplied, `route` wins. Button and TabButton
+open `href` in a new tab; SidebarItem, SidebarRailItem, MobileNavItem, and
+ListRow render it as a native same-tab anchor. The PageHeader back button calls
+its history fallback `fallbackRoute`, because it is used only when there is no
+in-app history.
+_Avoid_: `to` as a component prop, `link`, `fallback`
 
 **action**:
-A button rendered in the Dialog's footer area, declared via the `actions` prop. Each action gets reactive `loading` state while its async `onClick` runs and receives a `{ close }` context.
+A button declared via a component's action prop(s), rendered in its footer/toolbar row.
+Typed by an internal generic `Action<Ctx>` (`ButtonProps` plus `onClick(context)`);
+the public names are `DialogAction` (context `{ close }`) and `AlertAction`
+(context `{ dismiss }`, shared with SidebarCard), plus `DividerAction` (no
+callback context). Dialog, Alert, SidebarCard and TextEditor get reactive
+`loading` state while an async `onClick` runs; Divider forwards the click and
+the caller owns its loading state. Shared by Dialog, Alert, SidebarCard, Divider
+and TextEditor (P6-aligned).
+Charts take no action prop — a chart header renders caller-supplied
+buttons through the `#actions` slot (spec/charts.md).
 
-### Frappe-integrated controls
+**content-driven layout** (Alert):
+Alert has no `layout` prop. It renders as a single-line `row`; a `description` (prop
+or slot) or a `secondaryAction` switches it to the stacked `banner` layout. The
+computed result is stamped as `data-layout`. Visibility is the parent's `v-if` —
+Alert is stateless and only emits `dismiss`. Alert themes are
+`gray | blue | green | amber | red`.
+_Avoid_ (Alert): `intent`, `visible`, `yellow`
 
-Molecules that bridge frappe-ui to the Frappe Desk backend. They depend on backend endpoints (search, resource fetching, etc.) and cannot be used standalone in a non-Frappe app. They follow the same library-wide design rules as atoms — notably the P5 labeling contract. Specced in [`v1-release/10-frappe-controls-spec.md`](./v1-release/10-frappe-controls-spec.md).
+**bare** (Dialog):
+Prop (default `false`) that suppresses the dialog's default chrome so the `#default`
+slot fills the entire modal shell. For command palettes, full-screen settings, etc.
+_Avoid_: `flush`, `chromeless`, `unstyled` (in new code)
 
-**Link**:
-A P5 input control that picks a single record from a Frappe doctype. Bound via unnamed `v-model` to the record's primary key (string) or `null` when empty. Built on `Combobox`, scoped to one doctype via the `doctype` prop and narrowed via `filters`. Renders a default clear affordance when the value is set and the field is not required. Opt into a "Create new" action row via the `creatable` boolean prop, which emits `@create` with the typed query. Accepts the full P5 labeling contract (`label`, `description`, `error`, `required`).
-_Avoid_: using `Link` for non-doctype option lists — reach for `Combobox` directly. `allowCreate`, `allowClear`, `allowRedirect` are removed in v1 (no deprecation path — these were not present in a published release).
+**fluid** (TabButtons):
+Prop (default `false`) that makes the items share the container width equally
+instead of sizing to their labels. Use this name for any "stretch to fill the
+parent" prop.
+_Avoid_: `fullWidth`, `block`, `stretch`, `grow`
 
-### Editor family
+**side** (Tabs family):
+Prop naming the edge a component attaches to (`left | right`). Distinct from
+`dir`, which is the `ltr`/`rtl` writing direction.
+_Avoid_: `direction`, `placement` (for a single edge)
+
+**align**:
+Prop naming placement along a side or rule (`start | center | end`). Used by
+overlays and by Divider actions. Distinct from `side`, which selects the edge.
+_Avoid_: `position`, `placement` (when the side is already known)
+
+**chrome** (informal):
+The auto-rendered visual scaffolding around a component's content — padded card, header
+row, actions footer. Not an API term; it's the thing Dialog's `bare` removes.
+
+> Dialog's full API — props, slots, ARIA, the imperative `dialog.confirm/danger/prompt`
+> namespace, and `PromptField` — is specified in [`spec/dialog.md`](./spec/dialog.md).
+
+### Keyboard shortcuts
+
+Vocabulary for `useKeyboardShortcut`, `KeyboardShortcutsDialog` and
+`KeyboardShortcut`; the API is specified in [`spec/shortcuts.md`](./spec/shortcuts.md).
+
+**combo**:
+The whole key combination as one string, written `Mod+Ctrl+Alt+Shift+<Key>`
+with the modifiers in that order. The single word for "which keys" across the
+composable, the dialog and the `KeyboardShortcut` component. The composable
+types it as a template-literal union, so the compiler checks it.
+`KeyboardShortcut`'s prop stays `string`, because callers compute it, and warns
+at runtime instead.
+_Avoid_: `shortcut`, `keys`, `binding`, `accelerator`, and separate `key` +
+`ctrl` + `shift` + `alt` fields
+
+**Mod**:
+The platform's primary modifier: Cmd on macOS, Ctrl elsewhere. `Ctrl` in a
+combo means Control on every platform, including macOS.
+_Avoid_: `Cmd`, `Meta`, `Command`, `CtrlOrCmd` (in a combo)
+
+**key** (in a combo):
+One named key, never the character it types: `A`, `Digit1`, `Slash`, `Escape`,
+`ArrowUp`. Punctuation has to be named because `+` is the separator.
+_Avoid_: raw characters (`/`, `?`, `+`), `Key1`, `Num1`
+
+_Avoid_ (family-wide): `shortcut` as a prop or option name, `condition` (it is
+`enabled`), `triggeredOn` (the callbacks pick the mode), `KeyboardShortcutsModal`,
+`formatShortcutLabel`, `getActiveShortcuts`
+
+## Editor family
+
+Vocabulary for the editor; the API is specified in [`spec/editor.md`](./spec/editor.md).
 
 **`frappe-ui/editor`** (subpath):
-The single subpath where the entire editor family lives — the `useEditor` engine, the `TextEditor` component, building-block components, kits, extensions, menu items, and presets. The only subsystem in frappe-ui that exports from a subpath rather than top-level; reserved for families big enough to warrant their own mental location. There are no editor exports from top-level `frappe-ui`.
+The single subpath where the entire editor family lives — the `useEditor` engine,
+`Editor`, building-block components, kits, extensions, menu items, and presets. The
+whole family is there and nowhere else: root exports nothing from it. It is one of
+several runtime subpaths (`editor`, `list`, `charts`, `icons`, `experimental`),
+beside the build-time entries; what earns one is
+[ADR-0010](./spec/adr/0010-subpath-export-rule.md). The v0 `TextEditor` family sits
+on `frappe-ui/experimental`, not here.
+_Avoid_: importing the editor surface from `frappe-ui` (top-level); shipping ready-made
+assembled editors (`CommentEditor`/`RichTextEditor`) from the library.
 
-Surface from this subpath:
-- **Engine**: `useEditor` — owns the TipTap `Editor` lifecycle, binds content via `v-model`, threads upload, detects collaboration. Requires an explicit `extensions` list (no default).
-- **Component**: `TextEditor` — the one component everything is built on; capability via the explicit `extensions` array, chrome via `toolbar`/`bubbleMenu`/`floatingMenu` props, layout via slots.
-- **Building blocks**: `EditorContent`, `EditorFixedMenu`, `EditorBubbleMenu`, `EditorFloatingMenu` — the parts `TextEditor` renders internally, each taking an explicit `:editor` prop; exported for composition that doesn't go through the component.
-- **Kits**: `StarterKit`, `CommentKit`, `RichTextKit`, `InlineKit` — `StarterKit`-style configurable extension bundles. The unit of capability defaults and the tree-shaking boundary.
-- **Extensions**: tiptap-original (with our default config) and frappe-custom, all as flat named exports — `Image`, `Mention`, `SlashCommands`, `Tag`, `Table`, `Link`, `Placeholder`, etc. Consumers `.configure(...)` and pass through `extensions`.
-- **Menu items + presets**: typed `MenuItem` objects (`Bold`, `H2`, `Separator`, …) and `MenuItem[]` presets (`commentToolbar`, `articleToolbar`, `minimalToolbar`).
-
-The `useEditor` name shadows TipTap's own `useEditor` from `@tiptap/vue-3`. Consumers who import both alias one side: `import { useEditor as useTipTapEditor } from '@tiptap/vue-3'`. The collision is rare in practice (only consumers building deeply custom editors hit it) and the cleaner name wins for the common case.
-
-_Avoid_: importing the editor surface from `frappe-ui` (top-level) — it doesn't exist there; shipping ready-made assembled editors (`CommentEditor`/`RichTextEditor`) from the library — apps build their own on `TextEditor`.
-
-**TextEditor**:
-The single editor component, built on `useEditor`. Capability is the explicit `extensions` array (required — pass at least a kit); chrome is the `fixedMenu`/`bubbleMenu`/`floatingMenu` props (default off, explicit so the component stays tree-shakeable). The three surface props match the building-block component names and v0's `fixed-menu`/`bubble-menu`/`floating-menu`. Customized progressively on the *same* component — props → named slots (`#actions`, `#fixedMenu`) → `#default` layout slot → drop to `useEditor` + building blocks — with no second component family. Replaces the v0 `TextEditor` monolith (same name, new contract; a pre-v1 break, P13).
-_Avoid_: a fat default `extensions` list or a defaulted fixed menu (breaks tree-shaking); proxy props for data-driven extensions (`mentions`/`tags`) — configure the kit member instead.
+**Editor**:
+The single v1 editor component (a molecule), built on the `useEditor` engine and
+**renderless** — it owns the editor lifecycle, `v-model`, upload and placeholder
+threading, and exposes `{ editor, isEmpty }` through its `#default` slot, where the
+consumer composes the layout (content area, menus, actions) from the building blocks. It
+renders no UI of its own. Capability is the required `extensions` array (pass at least a
+kit). Customization is a two-rung ladder — slot markup, then drop to `useEditor` +
+building blocks (L4) when the instance must live outside the component. Supersedes the v0
+editor monolith. Spec: [`spec/editor.md`](./spec/editor.md).
+_Avoid_: a fat default `extensions` list or a defaulted menu (breaks tree-shaking); proxy
+props for data-driven extensions (`mentions`/`tags`) — configure the kit member instead.
 
 **kit** (Editor family):
-A `StarterKit`-style extension that bundles others; every member is configured or removed via canonical `.configure()` (`RichTextKit.configure({ mention: { items }, table: false })`). Data-driven members (`mention`, `tag`, `slashCommands`) are inert until given `items`. Kits supply "good defaults" as an opt-in import and are the tree-shaking boundary. `StarterKit` (base), `CommentKit`, `RichTextKit`, `InlineKit`.
-_Avoid_: a `mentions`/`tags` component prop standing in for `kit.configure({ mention })`; relying on a kit member you didn't configure with data.
-
-**app editor component** (informal):
-The thin component an app builds on `TextEditor`, encoding that app's mention source, local extensions, toolbar preset, and action buttons — reused across the app's call sites. frappe-ui ships none of these; the reuse unit for an *assembled* editor is per-app, because assembled editors are app-specific (gameplan's comment editor ≠ helpdesk's). This replaces the v0 "ready-made" concept: convenience lives in the app, not the library.
+A `StarterKit`-style extension that bundles others, each member configured or removed via
+`.configure()`. Data-driven members (`mention`, `tag`, `slashCommands`) are inert until
+given `items`. The unit of capability defaults and the tree-shaking boundary.
+`StarterKit`, `CommentKit`, `RichTextKit`, `InlineKit`.
 
 **format** (Editor family):
-The content format axis of an editor: `'html' | 'json'`. Default `'html'`. Set as a prop on `TextEditor` (`<TextEditor v-model="x" format="json" />`) and as an option on `useEditor` (`useEditor({ content, format })`). Editors expose content via the unnamed `v-model` (P2-canonical — text content is the primary value); the consumer's chosen `format` decides whether v-model emits HTML strings or `JSONContent` objects. There is no separate `v-model:html` or `v-model:json` — one v-model carries whichever format is configured.
-_Avoid_: type-sniffing the modelValue at runtime; declaring format via a boolean (`:json="true"`); separate v-models per format.
+The content-format axis of an editor: `'html' | 'json' | 'markdown'` (default
+`'html'`), set on `Editor` or `useEditor`. Content flows through the unnamed
+`v-model` (P2); `format` decides whether it emits an HTML string, a `JSONContent`
+object, or a Markdown string — there is no separate `v-model:html`/`v-model:json`.
+`'markdown'` needs the `Markdown` extension in `extensions`, which is why it is a
+separate import: a development build warns when it is missing.
+_Avoid_: type-sniffing modelValue at runtime; a boolean (`:json="true"`); separate
+v-models per format.
 
-**actions** (TextEditor slot):
-A named slot on `TextEditor`, rendered inline with the toolbar row inside the editor's border. Receives `{ editor, isEmpty }` so the consumer can wire Submit/Discard buttons to the editor instance without a template ref. For layout beyond buttons-in-the-toolbar-row (CC/BCC headers, attachment rows, side panels), take the `#default` layout slot instead. Mirrors Dialog's `actions` vocabulary (P6-aligned).
-_Avoid_: using `actions` for content other than buttons — use the `#default` slot for custom layout.
+**app editor component** (informal):
+The thin component an app builds on `Editor`, encoding that app's mention source,
+local extensions, toolbar preset, and action buttons. frappe-ui ships none — assembled
+editors are app-specific (gameplan's comment editor ≠ helpdesk's).
 
-## Relationships
+_Avoid_ (family-wide): `component` for suggestion rendering (`listComponent` names
+the popup and `nodeView` names a document node); `EditorFixedMenu.buttonSize` (it is
+`size`).
 
-- A **Dialog** has zero or more **actions**, each rendered as a Button in the footer.
-- **Dialog**, **Popover**, **Dropdown**, and **Tooltip** all share the **open** vocabulary (`v-model:open`).
-- **TextEditor** is built on **useEditor** and the editor building blocks; apps build their own editor components on top of **TextEditor**.
+## Code editor family
+
+Vocabulary for the code editor; the API is specified in
+[`spec/code-editor.md`](./spec/code-editor.md). Separate from the Editor family above:
+different engine (CodeMirror 6, not TipTap), different subpath, no shared names.
+
+**`frappe-ui/code-editor`** (subpath):
+The single subpath where the whole code-editor family lives: the `useCodeEditor` engine,
+`CodeEditor`, `CodeEditorContent`, `CodeKit`, the `codeChrome` and `codeHighlight`
+extensions, and `loadLanguage`. Earned on all three ADR-0010 limbs (static CodeMirror,
+open extension registry, colliding names). There are no code-editor exports from
+top-level `frappe-ui` and none from `frappe-ui/editor`.
+_Avoid_: importing the code-editor surface from `frappe-ui` (top-level) or from
+`frappe-ui/experimental` (the old `CodeEditor`/`CodePreview` pair is deleted, ADR-0019);
+shipping a ready-made assembled code editor from the library.
+
+**CodeEditor**:
+The single v1 code-editor component (a molecule), built on `useCodeEditor` and
+**renderless**. It owns the `EditorView` lifecycle and the content `v-model`, provides the
+view to its parts, and renders no UI of its own. Capability is the required `extensions`
+array. Content is the unnamed `v-model` with two channels: `update:modelValue` live and
+`change` on blur as the commit point. Spec:
+[`spec/code-editor.md`](./spec/code-editor.md).
+_Avoid_: confusing it with `@framework/ui`'s `CodeEditorField` (formerly its own
+`CodeEditor`), which is the labeled, assembled field an app renders; a `language` prop or
+feature booleans (pass extensions); `variant`/`size` props (they are CSS vars on the
+consumer's wrapper).
+
+**CodeEditorContent**:
+The part that renders the editor box and mounts CodeMirror's DOM. Takes an optional
+`editor` prop that falls back to the view `CodeEditor` provides, the same shape
+`EditorContent` uses. The only part: CodeMirror owns all of its own DOM, so the family has
+no menu parts.
+_Avoid_: menu or toolbar parts in this family; reaching into CodeMirror's DOM from the
+outside instead of passing an extension.
+
+**useCodeEditor**:
+The engine composable. Owns the `EditorView` lifecycle, binds content, re-applies
+`extensions`, and destroys on unmount. Returns the view unwrapped as
+`ShallowRef<EditorView | null>`, the house pattern `useEditor` and `useChart` already use.
+_Avoid_: wrapping the view in a facade object; exposing a `Compartment`.
+
+**kit** (Code editor family):
+`CodeKit`, one configurable bundle of CodeMirror extensions: `basicSetup`'s members plus
+the `highlight`, `keymap` and `chrome` members, with `lineNumbers` off by default. It
+exists because `basicSetup` is a flat array from which no member can be removed. Same role
+as the Editor family's **kit** entry above (capability defaults, the tree-shaking
+boundary), on a different engine.
+_Avoid_: defaulting the kit onto the component; passing `basicSetup` alongside `CodeKit`.
+
+**chrome** (Code editor family):
+The opt-in frappe look. The `codeChrome` extension adds one class, and the family's
+stylesheet is scoped under it, so an app that omits the extension gets none of that CSS.
+One of three independently removable layers: CodeMirror's base, `codeChrome`,
+`codeHighlight`. Painted through the `--code-*` hooks (ADR-0017): `--code-bg`,
+`--code-border`, `--code-radius`, `--code-focus-ring`, `--code-font-size`,
+`--code-padding-x`, `--code-padding-y`, `--code-min-height`,
+`--code-max-height`.
+_Avoid_: shipping ambient CSS that every importer must override; a `theme` or `variant`
+prop; reconfiguring anything for dark mode (the hooks resolve `var(--ink-*)` and
+`var(--surface-*)`).
+
+**extensions** (Code editor family):
+The required capability array of raw CodeMirror `Extension` values. **Reactive here**:
+`MaybeRefOrGetter<Extension[]>`, re-applied with a top-level `StateEffect.reconfigure`. In
+the Editor family it is construction-time, because TipTap cannot swap extensions at
+runtime and CodeMirror can. Real runtime cases drive it: Desk picks the language from
+`df.options`, Builder's `activeScript.script_type` changes.
+_Avoid_: assuming either family's rule applies to the other; a `Compartment` in app code.
+
+**loadLanguage**:
+`loadLanguage(key)` dynamically imports one `@codemirror/lang-*` package and returns its
+extension. The ten language packages are **optional peer dependencies**, so the app that
+calls it installs the package it names.
+_Avoid_: listing a language package as a hard dependency; a `language` prop that hides
+this call.
 
 ## Flagged ambiguities
 
-- **`v-model` vs `v-model:open` on Dialog**: both are supported indefinitely. `v-model:open` is canonical and aligns with Popover/Dropdown; `v-model` (bound to `modelValue`) remains supported with no deprecation warning. If both are bound, `open` wins. See [`spec/dialog.md`](./spec/dialog.md).
+- **`v-model` vs `v-model:open` on Dialog**: both are supported indefinitely.
+  `v-model:open` is canonical and aligns with Popover/Dropdown; bare `v-model` (bound to
+  `modelValue`) remains supported with no deprecation warning. If both are bound, `open`
+  wins. See [`spec/dialog.md`](./spec/dialog.md).

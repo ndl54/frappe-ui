@@ -50,6 +50,27 @@ describe('FormControl', () => {
     cy.contains('Accept terms').should('exist')
   })
 
+  it('round-trips v-model through the default TextInput route', () => {
+    cy.mount(FormControl, {
+      props: {
+        label: 'Title',
+        modelValue: 'Hello',
+        'onUpdate:modelValue': cy.spy().as('onUpdate'),
+      },
+    })
+
+    cy.get('input').should('have.value', 'Hello')
+    cy.get('input').type(' world')
+    cy.get('@onUpdate').should('have.been.calledWith', 'Hello world')
+  })
+
+  it('forwards disabled to the default TextInput route', () => {
+    cy.mount(FormControl, {
+      props: { label: 'Title', disabled: true },
+    })
+    cy.get('input').should('be.disabled')
+  })
+
   it('passes prefix and suffix slots through to the text input', () => {
     cy.mount(FormControl, {
       props: {
@@ -69,31 +90,38 @@ describe('FormControl', () => {
       })
   })
 
-  it('warns when type="autocomplete" is used', () => {
+  // `type="autocomplete"` was removed in 1.0.0. It is the one silent break in
+  // that removal: the dispatcher falls through to TextInput and still forwards
+  // the type, so the browser renders a plain text box with no error. The
+  // dev-only console.error is the only thing that names it.
+  it('errors when the removed type="autocomplete" is used', () => {
     cy.window().then((win) => {
-      cy.spy(win.console, 'warn').as('consoleWarn')
+      cy.spy(win.console, 'error').as('consoleError')
     })
     cy.mount(FormControl, {
       props: {
-        type: 'autocomplete',
+        type: 'autocomplete' as any,
         options: [
           { label: 'One', value: 1 },
           { label: 'Two', value: 2 },
         ],
       },
     })
-    cy.get('@consoleWarn').should(
+    cy.get('@consoleError').should(
       'have.been.calledWithMatch',
-      /FormControl type="autocomplete" is deprecated.*Combobox/,
+      /type="autocomplete" was removed in 1\.0\.0.*type="combobox"/,
     )
   })
 
-  it('does not warn for non-autocomplete types', () => {
+  it('does not error for supported types', () => {
     cy.window().then((win) => {
-      cy.spy(win.console, 'warn').as('consoleWarn')
+      cy.spy(win.console, 'error').as('consoleError')
     })
     cy.mount(FormControl, { props: { label: 'Title' } })
-    cy.get('@consoleWarn').should('not.have.been.calledWithMatch', /FormControl/)
+    cy.get('@consoleError').should(
+      'not.have.been.calledWithMatch',
+      /FormControl/,
+    )
   })
 
   describe('dispatcher delegation', () => {
@@ -179,8 +207,8 @@ describe('FormControl', () => {
       cy.get('label').should('have.length', 1)
     })
 
-    it('renders bare select with w-full so it fills its container (ListFilter pattern)', () => {
-      // Mirrors how ListFilter renders FormControl in a min-width column:
+    it('renders bare select with w-full so it fills its container', () => {
+      // A bare FormControl select inside a min-width column:
       //   <div class="min-w-[140px]"><FormControl type="select" options /></div>
       // Old template hard-coded `class="w-full"` on Select; ensure the
       // dispatcher still produces a full-width trigger even without label.
@@ -217,6 +245,80 @@ describe('FormControl', () => {
           expect(triggerWidth).to.be.closeTo(colWidth, 1)
         })
       })
+    })
+  })
+  describe('size scale', () => {
+    const heights = { xs: 24, sm: 28, md: 32, lg: 40 } as const
+
+    for (const [size, height] of Object.entries(heights)) {
+      it(`forwards size="${size}" to a text input as ${height}px`, () => {
+        cy.mount(FormControl, { props: { type: 'text', size, label: 'Email' } })
+        cy.get('input')
+          .should('have.attr', 'data-size', size)
+          .and('have.css', 'height', `${height}px`)
+        cy.get('label').should('have.css', 'font-size', '13px')
+      })
+
+      it(`forwards size="${size}" to a textarea`, () => {
+        cy.mount(FormControl, {
+          props: { type: 'textarea', size, label: 'Notes' },
+        })
+        cy.get('textarea')
+          .should('have.attr', 'data-size', size)
+          .and('have.css', 'font-size', '13px')
+      })
+    }
+
+    it('clamps lg to md for a checkbox, which has no lg', () => {
+      // Checkbox renders on `ToggleSize` (`xs | sm | md`). Forwarding `lg`
+      // would fall off the end of its size chain and draw an `xs` control.
+      cy.mount(FormControl, {
+        props: { type: 'checkbox', size: 'lg', label: 'Subscribe' },
+      })
+      cy.get('input[type="checkbox"]').should('have.attr', 'data-size', 'md')
+    })
+
+    it('forwards the narrower sizes to a checkbox unchanged', () => {
+      for (const size of ['xs', 'sm', 'md'] as const) {
+        cy.mount(FormControl, {
+          props: { type: 'checkbox', size, label: 'Subscribe' },
+        })
+        cy.get('input[type="checkbox"]').should('have.attr', 'data-size', size)
+      }
+    })
+  })
+
+  // INP-Q5 / INP-Q8.
+  describe('template ref and forwarded props', () => {
+    for (const type of ['text', 'textarea', 'checkbox', 'select'] as const) {
+      it(`exposes focus() for type="${type}"`, () => {
+        cy.mount(FormControl, {
+          props: { type, label: 'Field', options: ['a', 'b'] },
+        }).then((mounted: any) => {
+          const vm = mounted.component ?? mounted.wrapper?.vm ?? mounted
+          vm?.focus?.()
+        })
+
+        cy.focused().should('exist')
+        cy.get('[data-slot="control"], [data-slot="trigger"]')
+          .filter(':focus')
+          .should('have.length', 1)
+      })
+    }
+
+    it('does not forward variant to a checkbox', () => {
+      cy.mount(FormControl, {
+        props: { type: 'checkbox', variant: 'outline', label: 'Subscribe' },
+      })
+      cy.get('input[type="checkbox"]').should('not.have.attr', 'variant')
+      cy.get('input[type="checkbox"]').should('not.have.attr', 'data-variant')
+    })
+
+    it('still forwards variant to a text input', () => {
+      cy.mount(FormControl, {
+        props: { type: 'text', variant: 'outline', label: 'Name' },
+      })
+      cy.get('input').should('have.attr', 'data-variant', 'outline')
     })
   })
 })

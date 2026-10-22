@@ -12,8 +12,8 @@
     />
     <div
       v-else
-      class="flex h-full w-full items-center justify-center bg-surface-gray-2 uppercase text-ink-gray-5 select-none"
-      :class="[labelClasses, shapeClasses]"
+      class="flex h-full w-full items-center justify-center uppercase select-none"
+      :class="[labelClasses, fallbackThemeClasses, shapeClasses]"
     >
       <div :class="iconClasses" v-if="$slots.default">
         <slot></slot>
@@ -25,7 +25,7 @@
     <div
       v-if="$slots.indicator"
       :class="[
-        'absolute bottom-0 right-0 grid place-items-center rounded-full bg-surface-white',
+        'absolute bottom-0 right-0 grid place-items-center rounded-full bg-surface-base',
         indicatorContainerClasses,
       ]"
     >
@@ -37,14 +37,53 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import type { AvatarProps } from './types'
+import { ref, computed, useAttrs } from 'vue'
+import type { AvatarProps, AvatarTheme } from './types'
 
 const imgFetchError = ref(false)
 
 const props = withDefaults(defineProps<AvatarProps>(), {
   size: 'md',
   shape: 'circle',
+  theme: 'gray',
+})
+
+const fallbackThemeClasses = computed(() => {
+  const classes: Record<AvatarTheme, string> = {
+    gray: 'bg-surface-gray-2 text-ink-gray-5',
+    blue: 'bg-surface-blue-2 text-ink-blue-7',
+    green: 'bg-surface-green-2 text-ink-green-7',
+    amber: 'bg-surface-amber-2 text-ink-amber-7',
+    red: 'bg-surface-red-2 text-ink-red-7',
+    violet: 'bg-surface-violet-2 text-ink-violet-7',
+  }
+  return classes[props.theme]
+})
+
+// Let a consumer size the avatar with a Tailwind utility (`class="size-16"`)
+// instead of the `size` prop enum. When a sizing utility is present we drop the
+// enum's `w-*/h-*` so the two don't both land on the root and fight; the class
+// (applied via inheritAttrs) then wins on its own.
+//
+// Unprefixed tokens only. Tailwind emits variant utilities after the base ones,
+// so `size-8 sm:size-16` already resolves the consumer's way at `sm`. Dropping
+// the enum for a prefixed token instead leaves the avatar unsized everywhere
+// the variant does not apply, and this root is `inline-block`, so it collapses
+// to its content: an image-only avatar becomes 0x0.
+const attrs = useAttrs()
+const hasSizeOverride = computed(() => {
+  const cls = Array.isArray(attrs.class)
+    ? attrs.class.join(' ')
+    : typeof attrs.class === 'string'
+      ? attrs.class
+      : ''
+  return cls
+    .split(/\s+/)
+    .some(
+      (token) =>
+        !token.includes(':') &&
+        /^-?(size|w|h|min-w|max-w|min-h|max-h)-/.test(token),
+    )
 })
 
 const shapeClasses = computed(() => {
@@ -63,6 +102,7 @@ const shapeClasses = computed(() => {
 })
 
 const sizeClasses = computed(() => {
+  if (hasSizeOverride.value) return ''
   return {
     xs: 'w-4 h-4',
     sm: 'w-5 h-5',
@@ -81,8 +121,8 @@ const labelClasses = computed(() => {
     md: 'text-base',
     lg: 'text-base',
     xl: 'text-lg',
-    '2xl': 'text-xl',
-    '3xl': 'text-2xl',
+    '2xl': 'text-2xl',
+    '3xl': 'text-3xl',
   }[props.size]
   return ['font-medium', sizeClass]
 })
@@ -123,7 +163,7 @@ const iconClasses = computed(() => {
   }[props.size]
 })
 
-function handleImageError(err) {
+function handleImageError(err: Event) {
   if (err.type) {
     imgFetchError.value = true
   }
@@ -136,5 +176,4 @@ defineSlots<{
   /** Small indicator shown at the bottom-right of the avatar */
   indicator?: () => any
 }>()
-
 </script>

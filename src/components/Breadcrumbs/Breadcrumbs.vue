@@ -13,13 +13,15 @@
       </span>
     </template>
 
-    <div class="flex min-w-0 items-center text-ellipsis whitespace-nowrap">
+    <div
+      class="flex min-w-0 items-center text-ellipsis whitespace-nowrap leading-tighter"
+    >
       <template v-for="(item, i) in crumbs" :key="item.label">
         <router-link
           v-if="item.route"
           :to="item.route"
-          @click="item.onClick ? item.onClick() : null"
-          class="flex items-center rounded px-0.5 py-1 text-lg font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
+          @click="item.onClick?.($event)"
+          class="flex items-center rounded-4 px-0.5 py-1 text-lg-medium leading-tighter"
           :class="[
             i == crumbs.length - 1
               ? 'min-w-0 text-ink-gray-9'
@@ -38,8 +40,8 @@
         <a
           v-else-if="item.href"
           :href="item.href"
-          @click="item.onClick ? item.onClick() : null"
-          class="flex items-center rounded px-0.5 py-1 text-lg font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
+          @click="onLinkClick(item, $event)"
+          class="flex items-center rounded-4 px-0.5 py-1 text-lg-medium leading-tighter"
           :class="[
             i == crumbs.length - 1
               ? 'min-w-0 text-ink-gray-9'
@@ -57,8 +59,8 @@
         </a>
         <button
           v-else
-          @click="item.onClick ? item.onClick() : null"
-          class="flex items-center rounded px-0.5 py-1 text-lg font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
+          @click="item.onClick?.($event)"
+          class="flex items-center rounded-4 px-0.5 py-1 text-lg-medium leading-tighter"
           :class="[
             i == crumbs.length - 1
               ? 'min-w-0 text-ink-gray-9'
@@ -142,6 +144,26 @@ const dropdownItems = computed(() => {
 })
 
 const crumbs = computed(() => items.value.slice(overflowedX.value ? -2 : 0))
+
+function isModifiedClick(event: MouseEvent) {
+  return (
+    event.metaKey ||
+    event.ctrlKey ||
+    event.shiftKey ||
+    event.altKey ||
+    event.button !== 0
+  )
+}
+
+// An item may set both `href` and `onClick`, so the crumb keeps a real URL for
+// new-tab clicks and "copy link address" while `onClick` does the in-app
+// navigation. Modified clicks stay with the browser.
+function onLinkClick(item: BreadcrumbItem, event: MouseEvent) {
+  if (!item.onClick) return
+  if (isModifiedClick(event)) return
+  event.preventDefault()
+  item.onClick(event)
+}
 
 defineSlots<{
   /** Content shown before each breadcrumb label */

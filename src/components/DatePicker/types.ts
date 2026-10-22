@@ -2,8 +2,11 @@ import type { Dayjs } from 'dayjs/esm'
 import type { InputSize, InputVariant } from '../../composables/inputTypes'
 import type { InputLabelingProps } from '../../composables/useInputLabeling'
 
-export type PopoverSide = 'top' | 'right' | 'bottom' | 'left'
-export type PopoverAlign = 'start' | 'center' | 'end'
+// Re-exported, not redeclared: `index.ts` does `export * from './types'`, so a
+// local copy publishes a second structurally identical `PopoverSide` at the
+// package root that can drift from `Popover`'s without a compile error.
+import type { PopoverAlign, PopoverSide } from '../Popover/types'
+export type { PopoverAlign, PopoverSide }
 
 // Shared props for both single date and range pickers
 export interface CommonDatePickerProps extends InputLabelingProps {
@@ -16,12 +19,6 @@ export interface CommonDatePickerProps extends InputLabelingProps {
 
   /** Gap between the trigger and popover content in pixels. */
   offset?: number
-
-  /**
-   * Preferred popover placement relative to the trigger.
-   * @deprecated Use `side` and `align` instead.
-   */
-  placement?: DatePickerPlacement
 
   // Display
   /** Display format used for the input text. */
@@ -53,12 +50,6 @@ export interface CommonDatePickerProps extends InputLabelingProps {
    */
   typeable?: boolean
 
-  /**
-   * Prevents manual typing while keeping the picker interactive.
-   * @deprecated Use `typeable: false` instead.
-   */
-  readonly?: boolean
-
   /** Disables the trigger input and calendar interactions. */
   disabled?: boolean
 
@@ -67,12 +58,6 @@ export interface CommonDatePickerProps extends InputLabelingProps {
 
   /** Keeps the popover open after a date is selected. Default: false. */
   keepOpen?: boolean
-
-  /**
-   * Closes the popover after a value is picked.
-   * @deprecated Use `keepOpen` instead (inverse semantics: `autoClose: false` → `keepOpen: true`).
-   */
-  autoClose?: boolean
 
   // Constraints
   /**
@@ -89,41 +74,24 @@ export interface CommonDatePickerProps extends InputLabelingProps {
 
   /** Return true to prevent a date from being selected. Combined with `min`/`max`. */
   isDateUnavailable?: (date: Dayjs) => boolean
-
-  // Deprecated
-  /**
-   * Allows users to type custom date text into the input.
-   * @deprecated Use `typeable: false` instead.
-   */
-  allowCustom?: boolean
-
-  /**
-   * Additional classes applied to the trigger input.
-   * @deprecated Apply `class` directly to the DatePicker component element to control width.
-   */
-  inputClass?: string | Array<string> | Record<string, boolean>
 }
 
 export interface DatePickerProps extends CommonDatePickerProps {
-  /**
-   * Uncontrolled initial value for the picker.
-   * @deprecated Use `modelValue` with `v-model` instead.
-   */
-  value?: string
-
   /** Controlled value for the picker. */
   modelValue?: string
 }
 
+/** A range value: a `[from, to]` tuple in `YYYY-MM-DD` format, or `[]` when cleared. */
+export type DateRangeValue = [string, string] | []
+
 export interface DateRangePickerProps extends CommonDatePickerProps {
   /**
-   * Uncontrolled initial range value as `[from, to]` in `YYYY-MM-DD` format.
-   * @deprecated Use `modelValue` with `v-model` instead.
+   * Controlled range value as `[from, to]` in `YYYY-MM-DD` format, or `[]` for
+   * no selection. `DateRangeValue` types both sides of `v-model` (INP-Q12): the
+   * prop was `string[]`, which let a one-element array in and made a round-trip
+   * through the model fail to type-check.
    */
-  value?: string[]
-
-  /** Controlled range value as `[from, to]` in `YYYY-MM-DD` format, or `[]` for no selection. */
-  modelValue?: string[]
+  modelValue?: DateRangeValue
 
   /** Render two calendar panels side by side (current month + next month). */
   dualPane?: boolean
@@ -136,15 +104,9 @@ export type DatePickerEmits = {
   /** Fired when the popover open state changes. */
   (event: 'update:open', value: boolean): void
 
-  /**
-   * Fired after the picker commits a normalized value.
-   * @deprecated Functionally identical to `update:modelValue`. Bind via `v-model` instead.
-   */
+  /** Fired after the picker commits a normalized value. */
   (event: 'change', value: string): void
 }
-
-/** Emitted range value: a `[from, to]` tuple in `YYYY-MM-DD` format, or `[]` when cleared. */
-export type DateRangeValue = [string, string] | []
 
 export type DateRangePickerEmits = {
   /** Fired when the range value changes. Emits `[from, to]` or `[]` when cleared. */
@@ -153,57 +115,29 @@ export type DateRangePickerEmits = {
   /** Fired when the popover open state changes. */
   (event: 'update:open', value: boolean): void
 
-  /**
-   * Fired after the picker commits a normalized range value.
-   * @deprecated Functionally identical to `update:modelValue`. Bind via `v-model` instead.
-   */
+  /** Fired after the picker commits a normalized range value. */
   (event: 'change', value: DateRangeValue): void
 }
 
 export interface DateTimePickerProps extends CommonDatePickerProps {
-  /**
-   * Uncontrolled initial value for the picker.
-   * @deprecated Use `modelValue` with `v-model` instead.
-   */
-  value?: string
-
   /** Controlled value for the picker. */
   modelValue?: string
-
-  /**
-   * Earliest selectable date-time in `YYYY-MM-DD HH:mm:ss` format.
-   * @deprecated Use `min` instead.
-   */
-  minDateTime?: string
-
-  /**
-   * Latest selectable date-time in `YYYY-MM-DD HH:mm:ss` format.
-   * @deprecated Use `max` instead.
-   */
-  maxDateTime?: string
-
-  /** Allows typing a custom time into the embedded time picker. */
-  allowCustomTime?: boolean
 }
 
 export type DateTimePickerEmits = DatePickerEmits
-
-export type DatePickerPlacement =
-  | 'top-start'
-  | 'top-end'
-  | 'bottom-start'
-  | 'bottom-end'
-  | 'right-start'
-  | 'right-end'
-  | 'left-start'
-  | 'left-end'
 
 // ── Slot prop shapes ─────────────────────────────────────────────────────────
 
 /** Props bound to the trigger / prefix / suffix slots on all three pickers. */
 export interface DatePickerTriggerSlotProps {
-  togglePopover: () => void
-  isOpen: boolean
+  /** Whether the popover is currently open. */
+  open: boolean
+  /** Whether the picker is disabled. */
+  disabled: boolean
+  /** Sets the popover open state. */
+  setOpen: (value: boolean) => void
+  /** Closes the popover. Equivalent to `setOpen(false)`. */
+  close: () => void
   displayLabel: string
   inputValue: string
 }
@@ -214,6 +148,9 @@ export interface DatePickerActionsSlotProps {
   setDate: (date: string | Date | Dayjs) => void
   clear: () => void
   close: () => void
+  open: boolean
+  disabled: boolean
+  setOpen: (value: boolean) => void
 }
 
 /** Props bound to the `actions` slot on `DateRangePicker`. */
@@ -229,11 +166,12 @@ export interface DateRangePickerActionsSlotProps {
    * Commits both endpoints atomically. Normalizes order so the earlier
    * date becomes `from`. Use for fixed-window presets ("Last 7 days").
    */
-  setRange: (
-    range: [string | Date | Dayjs, string | Date | Dayjs],
-  ) => void
+  setRange: (range: [string | Date | Dayjs, string | Date | Dayjs]) => void
   clear: () => void
   close: () => void
+  open: boolean
+  disabled: boolean
+  setOpen: (value: boolean) => void
 }
 
 /** Props bound to the `actions` slot on `DateTimePicker`. */
@@ -243,17 +181,14 @@ export interface DateTimePickerActionsSlotProps {
   setDate: (date: string | Date | Dayjs) => void
   clear: () => void
   close: () => void
+  open: boolean
+  disabled: boolean
+  setOpen: (value: boolean) => void
 }
 
 export interface DatePickerSlots {
   /** Custom trigger renderer for the picker. */
   trigger?: (props: DatePickerTriggerSlotProps) => any
-
-  /**
-   * Custom trigger renderer for the picker.
-   * @deprecated Use `#trigger` instead. `#target` remains as a back-compat alias through v1.x.
-   */
-  target?: (props: DatePickerTriggerSlotProps) => any
 
   /** Content rendered before the trigger input value. */
   prefix?: (props: DatePickerTriggerSlotProps) => any
@@ -272,9 +207,6 @@ export interface DatePickerSlots {
 export interface DateRangePickerSlots {
   trigger?: (props: DatePickerTriggerSlotProps) => any
 
-  /** @deprecated Use `#trigger` instead. */
-  target?: (props: DatePickerTriggerSlotProps) => any
-
   prefix?: (props: DatePickerTriggerSlotProps) => any
   suffix?: (props: DatePickerTriggerSlotProps) => any
 
@@ -289,9 +221,6 @@ export interface DateRangePickerSlots {
 export interface DateTimePickerSlots {
   trigger?: (props: DatePickerTriggerSlotProps) => any
 
-  /** @deprecated Use `#trigger` instead. */
-  target?: (props: DatePickerTriggerSlotProps) => any
-
   prefix?: (props: DatePickerTriggerSlotProps) => any
   suffix?: (props: DatePickerTriggerSlotProps) => any
 
@@ -303,7 +232,7 @@ export interface DateTimePickerSlots {
   actions?: (props: DateTimePickerActionsSlotProps) => any
 }
 
-export type DatePickerViewMode = 'date' | 'month' | 'year'
+export type DatePickerViewMode = 'date' | 'monthYear'
 
 export interface DatePickerDateObj {
   date: Dayjs

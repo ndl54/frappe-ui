@@ -5,7 +5,7 @@
     tabindex="-1"
     :loop="loop"
     :trapped="trapped"
-    class="editor-popover border border-outline-gray-1 bg-surface-white shadow-xl outline-none"
+    class="editor-popover border border-outline-gray-2 bg-surface-elevation-2 shadow-2xl outline-none"
     :class="contentClass"
     @mount-auto-focus="onMountAutoFocus"
     @unmount-auto-focus="onUnmountAutoFocus"
@@ -23,7 +23,7 @@ import { FocusScope } from 'reka-ui'
  * floating panel needs — border/background/shadow, `role="dialog"` + label, an
  * enter animation, and a looping focus trap (reka-ui `FocusScope`) — so each
  * feature only renders its own contents. The corner radius is intentionally NOT
- * owned here: each popup sets its own via `content-class` (e.g. `rounded-md`).
+ * owned here: each popup sets its own via `content-class` (e.g. `rounded-5`).
  *
  * It deliberately does NOT handle Escape or scroll-locking: dismissal and
  * scroll policy vary per popup and are owned by the opener (see the link

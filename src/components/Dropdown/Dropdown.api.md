@@ -15,7 +15,7 @@
     name: 'options',
     description: 'Array of dropdown options or grouped options.',
     required: false,
-    type: 'DropdownOptions',
+    type: 'MenuOptions',
     default: '[]'
   },
   {
@@ -29,14 +29,8 @@
     name: 'align',
     description: 'Alignment of the dropdown content along the trigger edge.',
     required: false,
-    type: 'DropdownAlign'
-  },
-  {
-    name: 'placement',
-    description: 'Placement of the dropdown relative to the trigger.',
-    required: false,
-    type: 'DropdownPlacement',
-    deprecated: 'use `align` instead; `placement` remains as a back-compat alias through v1.x'
+    type: 'DropdownAlign',
+    default: '"start"'
   },
   {
     name: 'side',
@@ -53,15 +47,50 @@
     default: '4'
   },
   {
-    name: 'portalTo',
-    description: 'Teleport target for dropdown portal content.',
+    name: 'matchTriggerWidth',
+    description: 'Whether the dropdown width should match the trigger element.',
     required: false,
-    type: 'string | HTMLElement',
-    default: '"body"'
+    type: 'boolean'
+  },
+  {
+    name: 'portalTo',
+    description: 'Teleport target for dropdown portal content. Unset, an embedding host\'s target is used, else `body`.',
+    required: false,
+    type: 'PortalTarget'
   }
 ]
 
   const slotsData = [
+  {
+    name: 'item',
+    description: 'Replaces the entire item row.',
+    type: 'MenuItemSlotProps'
+  },
+  {
+    name: 'item-prefix',
+    description: 'Content rendered before the standard item label.',
+    type: 'MenuItemSlotProps'
+  },
+  {
+    name: 'item-label',
+    description: 'Content rendered for the standard item label area.',
+    type: 'MenuItemSlotProps'
+  },
+  {
+    name: 'item-suffix',
+    description: 'Content rendered after the standard item label.',
+    type: 'MenuItemSlotProps'
+  },
+  {
+    name: 'group-label',
+    description: 'Custom renderer for group labels.',
+    type: 'MenuGroupSlotProps'
+  },
+  {
+    name: 'empty',
+    description: 'Fallback content rendered when no items are available.',
+    type: 'any'
+  },
   {
     name: 'default',
     description: 'Alternate trigger renderer.',
@@ -71,36 +100,6 @@
     name: 'trigger',
     description: 'Explicit trigger slot renderer.',
     type: 'DropdownTriggerSlotProps'
-  },
-  {
-    name: 'item',
-    description: 'Replaces the entire item row.',
-    type: 'DropdownItemSlotProps'
-  },
-  {
-    name: 'item-prefix',
-    description: 'Content rendered before the standard item label.',
-    type: 'DropdownItemSlotProps'
-  },
-  {
-    name: 'item-label',
-    description: 'Content rendered for the standard item label area.',
-    type: 'DropdownItemSlotProps'
-  },
-  {
-    name: 'item-suffix',
-    description: 'Content rendered after the standard item label.',
-    type: 'DropdownItemSlotProps'
-  },
-  {
-    name: 'group-label',
-    description: 'Custom renderer for group labels.',
-    type: 'DropdownGroupSlotProps'
-  },
-  {
-    name: 'empty',
-    description: 'Fallback content rendered when no items are available.',
-    type: 'any'
   }
 ]
 
@@ -112,11 +111,11 @@
   }
 ]
 </script>
+
 ## API Reference
 
-<PropsTable name="Dropdown" :data="propsData"/> 
+<PropsTable name="Dropdown" :data="propsData"/>
 
-<SlotsTable :data="slotsData"/> 
+<SlotsTable :data="slotsData"/>
 
-<EmitsTable :data="emitsData"/> 
-
+<EmitsTable :data="emitsData"/>

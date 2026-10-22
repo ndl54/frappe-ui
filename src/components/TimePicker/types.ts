@@ -1,33 +1,24 @@
 /**
  * TimePicker is a thin wrapper around Combobox that adds time-aware parsing,
- * generated options, and a 12/24-hour display toggle. Canonical value is
+ * generated options, and configurable display formatting. Canonical value is
  * always 24-hour `HH:mm` (or `HH:mm:ss` if seconds were typed).
  */
+
+import type { InputLabelingProps } from '../../composables/useInputLabeling'
+import type { InputSize, InputVariant } from '../../composables/inputTypes'
 
 export type PopoverSide = 'top' | 'right' | 'bottom' | 'left'
 export type PopoverAlign = 'start' | 'center' | 'end'
 
-export type Placement =
-  | 'bottom-start'
-  | 'top-start'
-  | 'top-end'
-  | 'bottom-end'
-  | 'right-start'
-  | 'right-end'
-  | 'left-start'
-  | 'left-end'
+/**
+ * The shared input variants, under the picker's own name. It is an alias, not
+ * a copy: a TimePicker-only scale would need a TimePicker-only renderer.
+ */
+export type Variant = InputVariant
 
-export type Variant = 'outline' | 'subtle'
-
-export interface TimePickerProps {
+export interface TimePickerProps extends InputLabelingProps {
   /** Controlled value, canonical `HH:mm` (or `HH:mm:ss`). */
   modelValue?: string
-
-  /**
-   * Uncontrolled initial value.
-   * @deprecated Use `modelValue` with `v-model` instead.
-   */
-  value?: string
 
   /** Minute interval between generated options. */
   interval?: number
@@ -44,17 +35,14 @@ export interface TimePickerProps {
   /** Gap between trigger and popover in pixels. */
   offset?: number
 
-  /**
-   * Combined side+align placement.
-   * @deprecated Use `side` and `align` instead.
-   */
-  placement?: Placement
-
   /** Placeholder text when no value is selected. */
   placeholder?: string
 
   /** Visual style variant. */
   variant?: Variant
+
+  /** Visual size of the trigger input. Forwarded to the underlying `TextInput`. */
+  size?: InputSize
 
   /**
    * Whether the trigger input accepts typed input. When `false` the user can
@@ -63,29 +51,11 @@ export interface TimePickerProps {
    */
   typeable?: boolean
 
-  /**
-   * Prevents manual typing while keeping the picker interactive.
-   * @deprecated Use `typeable: false` instead.
-   */
-  readonly?: boolean
-
-  /**
-   * Allows users to type custom time values.
-   * @deprecated Use `typeable: false` instead.
-   */
-  allowCustom?: boolean
-
   /** Keeps the popover open after a time is selected. */
   keepOpen?: boolean
 
-  /**
-   * Closes the popover after a value is picked.
-   * @deprecated Use `keepOpen` (inverse semantics).
-   */
-  autoClose?: boolean
-
-  /** Use 12-hour (am/pm) format for display. */
-  use12Hour?: boolean
+  /** Dayjs format string used for display. Default: `HH:mm`. */
+  format?: string
 
   /** Disable the time picker. */
   disabled?: boolean
@@ -104,32 +74,16 @@ export interface TimePickerProps {
 
   /** Maximum selectable time as `HH:mm[:ss]`. */
   max?: string
-
-  /**
-   * Minimum selectable time as `HH:mm[:ss]`.
-   * @deprecated Use `min` instead.
-   */
-  minTime?: string
-
-  /**
-   * Maximum selectable time as `HH:mm[:ss]`.
-   * @deprecated Use `max` instead.
-   */
-  maxTime?: string
-
-  /**
-   * Scroll behavior when opening the list.
-   * @deprecated Scrolling is always centered now.
-   */
-  scrollMode?: 'center' | 'start' | 'nearest'
 }
 
+/**
+ * `open` and `close` are gone: `update:open` carries the same two events with
+ * the state in the payload. `input-invalid` and `invalid-change` are gone too
+ * — typed text that does not parse reverts to the last valid value, which the
+ * user sees, and nothing listened to either event (INP-Q3).
+ */
 export type TimePickerEmits = {
   (e: 'update:modelValue', value: string): void
   (e: 'update:open', value: boolean): void
   (e: 'change', value: string): void
-  (e: 'input-invalid', input: string): void
-  (e: 'invalid-change', invalid: boolean): void
-  (e: 'open'): void
-  (e: 'close'): void
 }

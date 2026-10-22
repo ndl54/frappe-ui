@@ -41,34 +41,27 @@ describe('Divider', () => {
     cy.get('div').should('exist')
   })
 
-  it('supports deprecated handler and warns once', () => {
-    const handler = cy.stub().as('actionHandler')
-
-    cy.window().then((win) => {
-      cy.stub(win.console, 'warn').as('consoleWarn')
-    })
-
+  it('accepts shared Button action fields', () => {
     cy.mount(Divider, {
       props: {
-        action: {
-          label: 'Load more',
-          handler,
-        },
+        action: { label: 'Delete', theme: 'red', variant: 'solid', size: 'md' },
       },
     })
 
-    cy.get('@consoleWarn').then((consoleWarn) => {
-      const matchingCalls = (consoleWarn as sinon.SinonStub)
-        .getCalls()
-        .filter((call) =>
-          /Divider\.action\.handler is deprecated/.test(String(call.args[0])),
-        )
+    cy.contains('button', 'Delete')
+      .should('have.class', 'bg-surface-red-7')
+      .and('have.class', 'h-8')
+      .and('have.class', 'text-base-medium')
+  })
 
-      expect(matchingCalls).to.have.length(1)
+  it('aligns an action along the divider', () => {
+    cy.mount(Divider, {
+      props: { align: 'start', action: { label: 'Add row' } },
     })
 
-    cy.contains('button', 'Load more').click()
-    cy.get('@actionHandler').should('have.been.calledOnce')
+    cy.contains('button', 'Add row')
+      .parent()
+      .should('have.class', 'justify-start')
   })
 
   it('does not overlap sibling content in vertical action mode', () => {

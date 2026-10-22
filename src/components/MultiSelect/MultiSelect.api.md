@@ -3,13 +3,14 @@
   import PropsTable from '@/components/Docs/PropsTable.vue'
   import SlotsTable from '@/components/Docs/SlotsTable.vue'
   import EmitsTable from '@/components/Docs/EmitsTable.vue'
+  import ExposedTable from '@/components/Docs/ExposedTable.vue'
 
   const propsData = [
   {
     name: 'modelValue',
     description: 'Array of selected option values.',
     required: false,
-    type: 'string[]',
+    type: '(string | number)[]',
     default: '[]'
   },
   {
@@ -23,14 +24,14 @@
     name: 'variant',
     description: 'Visual style of the trigger.',
     required: false,
-    type: 'MultiSelectVariant',
+    type: 'InputVariant',
     default: '"subtle"'
   },
   {
     name: 'size',
     description: 'Size of the trigger and option rows.',
     required: false,
-    type: 'MultiSelectSize',
+    type: 'InputSize',
     default: '"sm"'
   },
   {
@@ -55,6 +56,13 @@
     default: 'false'
   },
   {
+    name: 'query',
+    description: 'Controls the in-popover search query. Optional — the component owns the\nquery when this is not bound, so `v-model:query` is never required.\n\nWhen it is bound the consumer owns the query: the component never resets\nit on its own — not on open, not on close, not on mount, not on `clear()`.\nOnly typing (or the `setQuery` slot prop) changes it, and a seeded query\nfilters the list immediately. Unbound, the query still clears every time\nthe popover opens.',
+    required: false,
+    type: 'string',
+    default: '""'
+  },
+  {
     name: 'hideSearch',
     description: 'Hides the in-popover search input.',
     required: false,
@@ -63,10 +71,17 @@
   },
   {
     name: 'loading',
-    description: 'Replaces the results with a loading state.',
+    description: 'Marks a fetch as in flight. With the search row showing, a spinner appears\nin it and the options you passed stay selectable; under `hide-search` a\nloading row replaces the results instead.',
     required: false,
     type: 'boolean',
     default: 'false'
+  },
+  {
+    name: 'filterable',
+    description: 'Client-side query filtering. Defaults to `true`. Set to `false` for\npickers whose options come from a server search — the backend already\ndecided what matches, and a second literal substring pass on the client\nsilently drops fuzzy, ranked, or id-based results. This turns off query\nfiltering only; nothing else about the component changes.',
+    required: false,
+    type: 'boolean',
+    default: 'true'
   },
   {
     name: 'emptyText',
@@ -98,16 +113,9 @@
   },
   {
     name: 'portalTo',
-    description: 'Teleport target for the popover content.',
+    description: 'Teleport target for the popover content. Unset, an embedding host\'s target is used, else `body`.',
     required: false,
-    type: 'string | HTMLElement',
-    default: '"body"'
-  },
-  {
-    name: 'compareFn',
-    description: 'Custom equality function used to resolve which options are currently\nselected for display and rendering. When omitted, the component uses\nstrict equality on `option.value` against entries in `modelValue`.',
-    required: false,
-    type: '((a: MultiSelectOption, b: MultiSelectOption) => boolean)'
+    type: 'PortalTarget'
   },
   {
     name: 'label',
@@ -117,19 +125,19 @@
   },
   {
     name: 'description',
-    description: 'Helper text rendered below the input.\nHidden when `error` is set.',
+    description: 'Helper text rendered below the input.\nHidden when `error` is set. A `#description` slot is not: it renders\nbeside the error, and is referenced alongside it.',
     required: false,
     type: 'string'
   },
   {
     name: 'error',
-    description: 'Error message rendered below the input. When set, the control receives\n`aria-invalid="true"` and `data-state="invalid"`. May be either a string\nor an `Error` object whose `messages?: string[]` is rendered as stacked\nlines (with `Error.message` as the fallback).',
+    description: 'Error message rendered below the input. When set, the control receives\n`aria-invalid="true"` and `data-state="invalid"`. Takes a string, an\narray of strings, or an `Error` whose `messages` are rendered as stacked\nlines (with `Error.message` as the fallback). This is the same value\n`ErrorMessage.message` takes. An empty array and an empty string both\nmean no error.',
     required: false,
-    type: 'string | FrappeUIError'
+    type: 'ErrorMessageValue'
   },
   {
     name: 'required',
-    description: 'Marks the field as required. Renders an asterisk next to the label and\nforwards `required` / `aria-required` to the underlying control.',
+    description: 'Marks the field as required. Renders an asterisk next to the label, with\n`sr-only` text that announces it, and forwards `required` /\n`aria-required` to the underlying control where the control\'s role allows\nit. `data-required` is set either way.',
     required: false,
     type: 'boolean'
   },
@@ -173,24 +181,14 @@
     type: 'any'
   },
   {
-    name: 'item-prefix',
-    description: 'Shared content rendered before the standard row label.',
-    type: 'MultiSelectItemSlotProps'
+    name: 'search-prefix',
+    description: 'Content rendered before the in-popover search input. Renders inside the\nsearch row, so it is not rendered at all when `hide-search` is set.',
+    type: 'MultiSelectSearchSlotProps'
   },
   {
-    name: 'item-label',
-    description: 'Shared content rendered for the standard row label area.',
-    type: 'MultiSelectItemSlotProps'
-  },
-  {
-    name: 'item-suffix',
-    description: 'Shared content rendered after the standard row label area.',
-    type: 'MultiSelectItemSlotProps'
-  },
-  {
-    name: 'item',
-    description: 'Replaces the entire row.',
-    type: 'MultiSelectItemSlotProps'
+    name: 'search-suffix',
+    description: 'Content rendered after the in-popover search input and loading\nindicator. Renders inside the search row, so it is not rendered at all\nwhen `hide-search` is set.',
+    type: 'MultiSelectSearchSlotProps'
   },
   {
     name: 'group-label',
@@ -204,22 +202,41 @@
   },
   {
     name: 'footer',
-    description: 'Replaces the default Clear All / Select All footer.',
+    description: 'Replaces the default Clear All / Select All footer. Receives the shared\ncontrol slot props plus `selectAll`.',
     type: 'MultiSelectFooterSlotProps'
   },
   {
-    name: 'option',
-    description: '',
-    type: '{ item: MultiSelectOption; }',
-    deprecated: 'compatibility alias for `#item-label`.'
+    name: 'item',
+    description: 'Replaces the entire row.',
+    type: 'MultiSelectItemSlotProps'
+  },
+  {
+    name: 'item-prefix',
+    description: 'Shared content rendered before the standard row label.',
+    type: 'MultiSelectItemSlotProps'
+  },
+  {
+    name: 'item-label',
+    description: 'Shared content rendered for the standard row label area.',
+    type: 'MultiSelectItemSlotProps'
+  },
+  {
+    name: 'item-suffix',
+    description: 'Shared content rendered after the standard row label area.',
+    type: 'MultiSelectItemSlotProps'
   }
 ]
 
   const emitsData = [
   {
+    name: 'update:open',
+    description: 'Fired when the open state changes.',
+    type: '[value: boolean]'
+  },
+  {
     name: 'update:modelValue',
     description: 'Fired when the model value changes.',
-    type: 'unknown[]'
+    type: '[value: (string | number)[]]'
   },
   {
     name: 'update:query',
@@ -227,17 +244,32 @@
     type: '[value: string]'
   },
   {
-    name: 'update:open',
-    description: 'Fired when the open state changes.',
-    type: 'unknown[]'
+    name: 'update:selectedOptions',
+    description: 'Fired alongside `update:modelValue` with the original option objects\nresolved out of `options`, so custom fields on an option survive.',
+    type: '[value: MultiSelectOption[]]'
+  }
+]
+
+  const exposedData = [
+  {
+    name: 'clear',
+    description: 'Clears the current selection. It leaves the search query alone.',
+    type: '() => void'
+  },
+  {
+    name: 'focus',
+    description: 'Moves focus to the trigger.',
+    type: '(options?: FocusOptions) => void'
   }
 ]
 </script>
+
 ## API Reference
 
-<PropsTable name="MultiSelect" :data="propsData"/> 
+<PropsTable name="MultiSelect" :data="propsData"/>
 
-<SlotsTable :data="slotsData"/> 
+<SlotsTable :data="slotsData"/>
 
-<EmitsTable :data="emitsData"/> 
+<EmitsTable :data="emitsData"/>
 
+<ExposedTable :data="exposedData"/>

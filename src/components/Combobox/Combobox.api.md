@@ -3,8 +3,15 @@
   import PropsTable from '@/components/Docs/PropsTable.vue'
   import SlotsTable from '@/components/Docs/SlotsTable.vue'
   import EmitsTable from '@/components/Docs/EmitsTable.vue'
+  import ExposedTable from '@/components/Docs/ExposedTable.vue'
 
   const propsData = [
+  {
+    name: 'modelValue',
+    description: 'Committed value. `null` when nothing is selected.',
+    required: false,
+    type: 'ComboboxOptionValue | null'
+  },
   {
     name: 'options',
     description: 'Options rendered in the popover.',
@@ -16,21 +23,21 @@
     name: 'trigger',
     description: 'Shape of the trigger.\n- `\'input\'` (default): user types directly into the trigger\n- `\'button\'`: render a button trigger; search input moves into the\n  popover header. Label + prefix auto-derive from the selected option.',
     required: false,
-    type: '"button" | "input"',
+    type: '"input" | "button"',
     default: '"input"'
   },
   {
     name: 'variant',
     description: 'Visual style of the combobox.',
     required: false,
-    type: 'ComboboxVariant',
+    type: 'InputVariant',
     default: '"subtle"'
   },
   {
     name: 'size',
     description: 'Size of the trigger and option rows.',
     required: false,
-    type: 'ComboboxSize',
+    type: 'InputSize',
     default: '"sm"'
   },
   {
@@ -51,7 +58,15 @@
     name: 'open',
     description: 'Controls the popover visibility.',
     required: false,
-    type: 'boolean'
+    type: 'boolean',
+    default: 'false'
+  },
+  {
+    name: 'query',
+    description: 'Controls the search query. Optional — the combobox owns it otherwise.\n\nWhen it is bound the consumer owns the query: the combobox never resets it\non its own — not on open, not on close, not on mount, not on `clear()`. It\nstill follows the committed option\'s label in `trigger="input"` mode, where\nthe input is the value display rather than a filter. Unbound,\n`trigger="button"` mode still clears the search box every time the popover\nopens.',
+    required: false,
+    type: 'string',
+    default: '""'
   },
   {
     name: 'openOnFocus',
@@ -78,7 +93,8 @@
     name: 'align',
     description: 'Preferred popover alignment.',
     required: false,
-    type: 'PopoverAlign'
+    type: 'PopoverAlign',
+    default: '"start"'
   },
   {
     name: 'offset',
@@ -89,17 +105,9 @@
   },
   {
     name: 'portalTo',
-    description: 'Teleport target for the popover content.',
+    description: 'Teleport target for the popover content. Unset, an embedding host\'s target is used, else `body`.',
     required: false,
-    type: 'string | HTMLElement',
-    default: '"body"'
-  },
-  {
-    name: 'allowCustomValue',
-    description: 'Free-form acceptance: the typed query is accepted as the model value\nwhen nothing matches, and external `modelValue` updates with unknown\nstrings are preserved. The combobox also renders a built-in "Create X"\nrow as a click affordance.\n\nFor richer create-new UX (custom label / icon / persistence callback),\nprefer a `type: \'custom\'` option with `condition` instead — see the\nCreate New story. The two are independent and can be combined.',
-    required: false,
-    type: 'boolean',
-    default: 'false'
+    type: 'PortalTarget'
   },
   {
     name: 'loading',
@@ -116,11 +124,18 @@
     default: '"No results"'
   },
   {
-    name: 'placement',
-    description: 'Alignment of the popover along the trigger edge.',
+    name: 'hideSearch',
+    description: 'Hides the in-popover search row (button mode only — in input mode the\ntrigger *is* the search input).\n\nThe `#search-prefix` / `#search-suffix` slots live inside that row and\nare not rendered when this is `true`.',
     required: false,
-    type: 'PopoverAlign',
-    deprecated: 'use `align` instead; `placement` is kept as a back-compat alias'
+    type: 'boolean',
+    default: 'false'
+  },
+  {
+    name: 'filterable',
+    description: 'Client-side substring filtering of `options` as the user types.\n\nSet to `false` for pickers whose options come from a server search: the\nbackend already decided what matches, and a second literal substring\npass on the client silently drops fuzzy, ranked, or id-based results.\n\nA custom option\'s `condition` callback is consumer-declared visibility\nrather than client filtering, so it keeps running either way.',
+    required: false,
+    type: 'boolean',
+    default: 'true'
   },
   {
     name: 'label',
@@ -130,19 +145,19 @@
   },
   {
     name: 'description',
-    description: 'Helper text rendered below the input.\nHidden when `error` is set.',
+    description: 'Helper text rendered below the input.\nHidden when `error` is set. A `#description` slot is not: it renders\nbeside the error, and is referenced alongside it.',
     required: false,
     type: 'string'
   },
   {
     name: 'error',
-    description: 'Error message rendered below the input. When set, the control receives\n`aria-invalid="true"` and `data-state="invalid"`. May be either a string\nor an `Error` object whose `messages?: string[]` is rendered as stacked\nlines (with `Error.message` as the fallback).',
+    description: 'Error message rendered below the input. When set, the control receives\n`aria-invalid="true"` and `data-state="invalid"`. Takes a string, an\narray of strings, or an `Error` whose `messages` are rendered as stacked\nlines (with `Error.message` as the fallback). This is the same value\n`ErrorMessage.message` takes. An empty array and an empty string both\nmean no error.',
     required: false,
-    type: 'string | FrappeUIError'
+    type: 'ErrorMessageValue'
   },
   {
     name: 'required',
-    description: 'Marks the field as required. Renders an asterisk next to the label and\nforwards `required` / `aria-required` to the underlying control.',
+    description: 'Marks the field as required. Renders an asterisk next to the label, with\n`sr-only` text that announces it, and forwards `required` /\n`aria-required` to the underlying control where the control\'s role allows\nit. `data-required` is set either way.',
     required: false,
     type: 'boolean'
   },
@@ -151,13 +166,6 @@
     description: 'HTML id of the underlying control. Auto-generated via `useId()` if omitted.',
     required: false,
     type: 'string'
-  },
-  {
-    name: 'modelValue',
-    description: '',
-    required: false,
-    type: 'string | null',
-    default: 'null'
   }
 ]
 
@@ -165,7 +173,7 @@
   {
     name: 'trigger',
     description: 'Fully custom trigger renderer.',
-    type: 'ComboboxTriggerSlotProps'
+    type: 'ComboboxControlSlotProps'
   },
   {
     name: 'label',
@@ -179,28 +187,23 @@
   },
   {
     name: 'prefix',
-    description: 'Content rendered before the default input. Receives the same shape\nas `#trigger` and `#suffix` (`ComboboxSlotProps`).',
-    type: 'ComboboxTriggerSlotProps'
+    description: 'Content rendered before the default input. Receives the same shape\nas the other control slots.',
+    type: 'ComboboxControlSlotProps'
   },
   {
     name: 'suffix',
     description: 'Content rendered after the input (input mode) or label (button mode).\nProviding this slot **replaces the default chevron** — render your\nown fallback (e.g. the chevron) when your slot content is conditional.\nCommon use: an inline clear button. Use `@click.stop` and\n`@pointerdown.stop` so the press doesn\'t toggle the popover.',
-    type: 'ComboboxTriggerSlotProps'
+    type: 'ComboboxControlSlotProps'
   },
   {
-    name: 'item-prefix',
-    description: 'Shared content rendered before the standard row label.',
-    type: 'ComboboxItemSlotProps'
+    name: 'search-prefix',
+    description: 'Content rendered before the in-popover search input (button mode only).\nNot rendered when `hideSearch` is set.',
+    type: 'ComboboxSearchSlotProps'
   },
   {
-    name: 'item-label',
-    description: 'Shared content rendered for the standard row label area.',
-    type: 'ComboboxItemSlotProps'
-  },
-  {
-    name: 'item-suffix',
-    description: 'Shared content rendered after the standard row label area.',
-    type: 'ComboboxItemSlotProps'
+    name: 'search-suffix',
+    description: 'Content rendered after the in-popover search input (button mode only).\nNot rendered when `hideSearch` is set.',
+    type: 'ComboboxSearchSlotProps'
   },
   {
     name: 'item',
@@ -219,16 +222,46 @@
   },
   {
     name: 'footer',
-    description: 'Content rendered after the list. Stays pinned below the scrollable options.',
-    type: 'ComboboxFooterSlotProps'
+    description: 'Content rendered after the list. Stays pinned below the scrollable\noptions.',
+    type: 'ComboboxControlSlotProps'
+  },
+  {
+    name: 'item-prefix',
+    description: 'Shared content rendered before the standard row label.',
+    type: 'ComboboxItemSlotProps'
+  },
+  {
+    name: 'item-label',
+    description: 'Shared content rendered for the standard row label area.',
+    type: 'ComboboxItemSlotProps'
+  },
+  {
+    name: 'item-suffix',
+    description: 'Shared content rendered after the standard row label area.',
+    type: 'ComboboxItemSlotProps'
   }
 ]
 
   const emitsData = [
   {
+    name: 'update:open',
+    description: 'Fired when the open state changes.',
+    type: '[value: boolean]'
+  },
+  {
+    name: 'blur',
+    description: 'Fired when the input loses focus.',
+    type: '[event: FocusEvent]'
+  },
+  {
+    name: 'focus',
+    description: 'Fired when the input receives focus.',
+    type: '[event: FocusEvent]'
+  },
+  {
     name: 'update:modelValue',
     description: 'Fired when the model value changes.',
-    type: '[value: string | null]'
+    type: '[value: ComboboxOptionValue | null | undefined]'
   },
   {
     name: 'update:query',
@@ -236,37 +269,32 @@
     type: '[value: string]'
   },
   {
-    name: 'input',
-    description: '',
-    type: '[value: string]'
-  },
-  {
-    name: 'update:open',
-    description: 'Fired when the open state changes.',
-    type: '[value: boolean]'
-  },
-  {
     name: 'update:selectedOption',
-    description: 'Fired when the selected option changes.',
+    description: 'Fired when the resolved selected option changes.',
     type: '[option: ComboboxSelectableOption | ComboboxCustomOption | null]'
+  }
+]
+
+  const exposedData = [
+  {
+    name: 'clear',
+    description: 'Clears the current selection (sets the model to `null`). In\n`trigger="button"` mode the typed search query stays. In\n`trigger="input"` mode the input empties, because there it shows the\nselected option\'s label.',
+    type: '() => void'
   },
   {
     name: 'focus',
-    description: '',
-    type: '[event: FocusEvent]'
-  },
-  {
-    name: 'blur',
-    description: '',
-    type: '[event: FocusEvent]'
+    description: 'Moves focus to the input in `trigger="input"` mode, and to the button in\n`trigger="button"` mode. While the popover\'s search input is showing, it\nfocuses that instead.',
+    type: '(options?: FocusOptions) => void'
   }
 ]
 </script>
+
 ## API Reference
 
-<PropsTable name="Combobox" :data="propsData"/> 
+<PropsTable name="Combobox" :data="propsData"/>
 
-<SlotsTable :data="slotsData"/> 
+<SlotsTable :data="slotsData"/>
 
-<EmitsTable :data="emitsData"/> 
+<EmitsTable :data="emitsData"/>
 
+<ExposedTable :data="exposedData"/>

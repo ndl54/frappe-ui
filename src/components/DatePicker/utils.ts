@@ -1,6 +1,7 @@
 import { dayjs, dayjsLocal } from '../../utils/dayjs'
 import type { Dayjs } from 'dayjs/esm'
-import type { DatePickerDateObj as DateObj } from './types'
+import type { DatePickerDateObj as DateObj, DateRangeValue } from './types'
+import type { CalendarPanelCell } from './calendarTypes'
 
 // Constant list of month labels
 export const months: string[] = [
@@ -63,64 +64,72 @@ export function getDateValue(date: Date | string) {
     .format('YYYY-MM-DD')
 }
 
-type DateConstructorParam = string | number | Date
-
 /**
- * @deprecated Legacy helper used by the deprecated {@link useDatePicker} composable.
- * Will be removed after v1.x. Use `dayjs` directly.
+ * Build the weeks grid for a range. Until the end is picked, `preview` (the
+ * hovered or focused date) stands in for it: cells between the start and the
+ * preview render as in-range, not as selected.
  */
-export function getDate(...args: DateConstructorParam[]): Date {
-  return new Date(...(args as [DateConstructorParam]))
+export function generateRangeWeeks(options: {
+  year: number
+  monthIndex: number
+  from: string
+  to: string
+  preview?: Dayjs | null
+  isUnavailable: (date: Dayjs) => boolean
+}): CalendarPanelCell[][] {
+  const { year, monthIndex, from, to, preview, isUnavailable } = options
+  const raw = generateWeeks(year, monthIndex, '')
+  const f = from ? dayjs(from) : null
+  const t = to ? dayjs(to) : null
+  const hovering = !t && f && preview ? preview : null
+  const hoverEnd = hovering && hovering.isAfter(f!, 'day') ? hovering : null
+  const hoverStart = hovering && hovering.isBefore(f!, 'day') ? hovering : null
+  return raw.map((week) =>
+    week.map((d) => {
+      const isRangeStart = !!(f && d.date.isSame(f, 'day'))
+      const isRangeEnd = !!(t && d.date.isSame(t, 'day'))
+      let inRange = false
+      if (f && t) {
+        inRange = d.date.isAfter(f, 'day') && d.date.isBefore(t, 'day')
+      } else if (hoverEnd && f) {
+        inRange = d.date.isAfter(f, 'day') && !d.date.isAfter(hoverEnd, 'day')
+      } else if (hoverStart && f) {
+        inRange =
+          !d.date.isBefore(hoverStart, 'day') && d.date.isBefore(f, 'day')
+      }
+      return {
+        ...d,
+        isSelected: false,
+        isUnavailable: isUnavailable(d.date),
+        isRangeStart,
+        isRangeEnd,
+        inRange,
+      }
+    }),
+  )
+}
+
+/** Put a range's endpoints in order, so picking the end first gives the same result. */
+export function orderRange(range: [string, string]): [string, string] {
+  const [from, to] = range
+  return from && to && from > to ? [to, from] : [from, to]
+}
+
+/** A range as one string, for comparing two ranges. */
+export function rangeKey(range: DateRangeValue | [string, string]): string {
+  return `${range[0] ?? ''},${range[1] ?? ''}`
 }
 
 /**
- * @deprecated Legacy helper used by the deprecated {@link useDatePicker} composable.
- * Will be removed after v1.x. Use `dayjs().add(n, 'day')` instead.
+ * Apply one click to a range: the first click starts a range, the second
+ * completes it, and a click on a completed range starts a new one.
  */
-export function getDatesAfter(date: Date, count: number) {
-  let incrementer = 1
-  if (count < 0) {
-    incrementer = -1
-    count = Math.abs(count)
-  }
-  const dates: Date[] = []
-
-  while (count) {
-    date = getDate(
-      date.getFullYear(),
-      date.getMonth(),
-      date.getDate() + incrementer,
-    )
-    dates.push(date)
-    count--
-  }
-
-  if (incrementer === -1) {
-    return dates.reverse()
-  }
-  return dates
-}
-
-/**
- * @deprecated Legacy helper used by the deprecated {@link useDatePicker} composable.
- * Will be removed after v1.x. Use `dayjs(...).daysInMonth()` instead.
- */
-export function getDaysInMonth(monthIndex: number, year: number) {
-  const daysInMonthMap = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-  const daysInMonth = daysInMonthMap[monthIndex]
-  if (monthIndex === 1 && isLeapYear(year)) {
-    return 29
-  }
-  return daysInMonth
-}
-
-/**
- * @deprecated Legacy helper used by the deprecated {@link useDatePicker} composable.
- * Will be removed after v1.x.
- */
-export function isLeapYear(year: number) {
-  if (year % 400 === 0) return true
-  if (year % 100 === 0) return false
-  if (year % 4 === 0) return true
-  return false
+export function stepRange(
+  range: [string, string],
+  date: Dayjs,
+): [string, string] {
+  const [from, to] = range
+  const value = date.format('YYYY-MM-DD')
+  if (!from || to) return [value, '']
+  return orderRange([from, value])
 }

@@ -3,7 +3,6 @@ import {
   computed,
   defineComponent,
   h,
-  ref,
   watchEffect,
   type Component,
   type SlotsType,
@@ -16,10 +15,10 @@ import {
   injectTooltipProviderContext,
 } from 'reka-ui'
 import { RouterLink } from 'vue-router'
-import FeatherIcon from '../FeatherIcon.vue'
 import Spinner from '../Spinner/Spinner.vue'
 import TooltipBubble from '../Tooltip/TooltipBubble.vue'
-import { warnFeatherIconUsage } from '../../utils/iconString'
+import { warnUnsupportedIconString } from '../../utils/iconString'
+import { useReactiveSlots } from '../../composables/useReactiveSlots'
 import { buttonProps, type ThemeVariant } from './types'
 
 export default defineComponent({
@@ -36,11 +35,16 @@ export default defineComponent({
     /** Content shown after the button label (right icon / custom content) */
     suffix: void
   }>,
-  setup(props, { attrs, slots, expose }) {
+  setup(props, { attrs, slots: rawSlots }) {
+    // The computeds below read the slots, and the object Vue hands to `setup`
+    // is mutated in place and never tracked. `typeof rawSlots` keeps the
+    // typing `slots: Object as SlotsType<...>` above declares.
+    const slots = useReactiveSlots<typeof rawSlots>()
+
     watchEffect(() => {
-      warnFeatherIconUsage('Button', 'icon', props.icon)
-      warnFeatherIconUsage('Button', 'iconLeft', props.iconLeft)
-      warnFeatherIconUsage('Button', 'iconRight', props.iconRight)
+      warnUnsupportedIconString('Button', 'icon', props.icon)
+      warnUnsupportedIconString('Button', 'iconLeft', props.iconLeft)
+      warnUnsupportedIconString('Button', 'iconRight', props.iconRight)
     })
 
     const isDisabled = computed(() => props.disabled || props.loading)
@@ -50,9 +54,15 @@ export default defineComponent({
     // group's skip-delay applies to this button instead of a private provider.
     const parentTooltipProvider = injectTooltipProviderContext(null)
 
+    // Re-reads the slots on every update, but its value is the slot function
+    // itself, so it only propagates when the slot actually changes. Without
+    // this gate the check below would materialize a throwaway vnode tree on
+    // every render of every text button.
+    const defaultSlot = computed(() => slots.default)
+
     // Render as an icon button when the default slot is exactly one lucide-* icon.
     const hasLucideIconInDefaultSlot = computed(() => {
-      const content = slots.default?.()
+      const content = defaultSlot.value?.()
       if (!Array.isArray(content)) return false
       const name = (content[0]?.type as { name?: string })?.name
       return typeof name === 'string' && name.startsWith('lucide-')
@@ -66,57 +76,69 @@ export default defineComponent({
     )
 
     const slotClasses = computed(
-      () => ({ xs: 'h-4', sm: 'h-4', md: 'h-4.5', lg: 'h-5' })[props.size],
+      () => ({ xs: 'h-3.5', sm: 'h-4', md: 'h-4.5', lg: 'h-5' })[props.size],
     )
 
     const lucideSlotClasses = computed(
       () =>
         ({
-          xs: 'size-4',
+          xs: 'size-3.5',
           sm: 'size-4',
           md: 'size-4.5',
           lg: 'size-5',
         })[props.size],
     )
 
+    /**
+     * The pressed look is driven by `data-state`, not a prop. A menu primitive
+     * using this Button as its `as-child` trigger already stamps
+     * `data-state="open"` on it, so a Dropdown/Popover/Select trigger holds the
+     * pressed look for free; a standalone toggle sets `data-state="active"`
+     * itself.
+     */
+    const isActive = computed(() => {
+      const state = attrs['data-state']
+      return state === 'open' || state === 'active'
+    })
+
     const buttonClasses = computed(() => {
       const solidClasses = {
-        gray: 'text-ink-white bg-surface-gray-7 hover:bg-surface-gray-6 active:bg-surface-gray-5',
-        blue: 'text-ink-white bg-blue-500 hover:bg-surface-blue-3 active:bg-blue-700',
+        gray: 'text-ink-base bg-surface-gray-10 hover:bg-surface-gray-9 active:bg-surface-gray-8',
+        blue: 'text-ink-base bg-surface-blue-6 hover:bg-surface-blue-7 active:bg-surface-blue-8',
         green:
-          'text-ink-white bg-surface-green-3 hover:bg-green-700 active:bg-green-800',
-        red: 'text-ink-white bg-surface-red-5 hover:bg-surface-red-6 active:bg-surface-red-7',
+          'text-ink-base bg-surface-green-7 hover:bg-surface-green-8 active:bg-surface-green-9',
+        red: 'text-ink-base dark:text-ink-red-9 bg-surface-red-7 hover:bg-surface-red-8 active:bg-surface-red-9',
       }[props.theme]
 
       const subtleClasses = {
         gray: 'text-ink-gray-8 bg-surface-gray-2 hover:bg-surface-gray-3 active:bg-surface-gray-4',
-        blue: 'text-ink-blue-3 bg-surface-blue-2 hover:bg-blue-200 active:bg-blue-300',
+        blue: 'text-ink-blue-5 bg-surface-blue-2 hover:bg-surface-blue-3 active:bg-surface-blue-4',
         green:
-          'text-green-800 bg-surface-green-2 hover:bg-green-200 active:bg-green-300',
-        red: 'text-red-700 bg-surface-red-2 hover:bg-surface-red-3 active:bg-surface-red-4',
+          'text-ink-green-8 bg-surface-green-2 hover:bg-surface-green-3 active:bg-surface-green-4',
+        red: 'text-ink-red-7 bg-surface-red-2 hover:bg-surface-red-3 active:bg-surface-red-4',
       }[props.theme]
 
       const outlineClasses = {
-        gray: 'text-ink-gray-8 bg-surface-white bg-surface-white border border-outline-gray-2 hover:border-outline-gray-3 active:border-outline-gray-3 active:bg-surface-gray-4',
-        blue: 'text-ink-blue-3 bg-surface-white border border-outline-blue-1 hover:border-blue-400 active:border-blue-400 active:bg-blue-300',
+        gray: 'text-ink-gray-8 bg-surface-base border border-outline-gray-2 hover:border-outline-gray-3 active:border-outline-gray-3 active:bg-surface-gray-4',
+        blue: 'text-ink-blue-5 bg-surface-base border border-outline-blue-1 hover:border-outline-blue-4 active:border-outline-blue-4 active:bg-surface-blue-4',
         green:
-          'text-green-800 bg-surface-white border border-outline-green-2 hover:border-green-500 active:border-green-500 active:bg-green-300',
-        red: 'text-red-700 bg-surface-white border border-outline-red-1 hover:border-outline-red-2 active:border-outline-red-2 active:bg-surface-red-3',
+          'text-ink-green-8 bg-surface-base border border-outline-green-3 hover:border-outline-green-5 active:border-outline-green-5 active:bg-surface-green-4',
+        red: 'text-ink-red-7 bg-surface-base border border-outline-red-1 hover:border-outline-red-3 active:border-outline-red-3 active:bg-surface-red-3',
       }[props.theme]
 
       const ghostClasses = {
         gray: 'text-ink-gray-8 bg-transparent hover:bg-surface-gray-3 active:bg-surface-gray-4',
-        blue: 'text-ink-blue-3 bg-transparent hover:bg-blue-200 active:bg-blue-300',
+        blue: 'text-ink-blue-5 bg-transparent hover:bg-surface-blue-3 active:bg-surface-blue-4',
         green:
-          'text-green-800 bg-transparent hover:bg-green-200 active:bg-green-300',
-        red: 'text-red-700 bg-transparent hover:bg-surface-red-3 active:bg-surface-red-4',
+          'text-ink-green-8 bg-transparent hover:bg-surface-green-3 active:bg-surface-green-4',
+        red: 'text-ink-red-7 bg-transparent hover:bg-surface-red-3 active:bg-surface-red-4',
       }[props.theme]
 
       const focusClasses = {
-        gray: 'focus-visible:ring focus-visible:ring-outline-gray-3',
-        blue: 'focus-visible:ring focus-visible:ring-blue-400',
-        green: 'focus-visible:ring focus-visible:ring-outline-green-2',
-        red: 'focus-visible:ring focus-visible:ring-outline-red-2',
+        gray: '', // global :focus-visible ring
+        blue: 'focus-visible:focus-ring-blue',
+        green: 'focus-visible:focus-ring-green',
+        red: 'focus-visible:focus-ring-red',
       }[props.theme]
 
       const variantClasses = {
@@ -135,55 +157,89 @@ export default defineComponent({
           'bg-surface-gray-2 text-ink-gray-4 border border-outline-gray-2',
         'gray-ghost': 'text-ink-gray-4',
 
-        'blue-solid': 'bg-blue-300 text-ink-white',
+        'blue-solid': 'bg-surface-blue-4 text-ink-base',
         'blue-subtle': 'bg-surface-blue-2 text-ink-blue-link',
         'blue-outline':
           'bg-surface-blue-2 text-ink-blue-link border border-outline-blue-1',
         'blue-ghost': 'text-ink-blue-link',
 
-        'green-solid': 'bg-surface-green-2 text-ink-green-2',
-        'green-subtle': 'bg-surface-green-2 text-ink-green-2',
+        'green-solid': 'bg-surface-green-2 text-ink-green-4',
+        'green-subtle': 'bg-surface-green-2 text-ink-green-4',
         'green-outline':
-          'bg-surface-green-2 text-ink-green-2 border border-outline-green-2',
-        'green-ghost': 'text-ink-green-2',
+          'bg-surface-green-2 text-ink-green-4 border border-outline-green-3',
+        'green-ghost': 'text-ink-green-4',
 
-        'red-solid': 'bg-surface-red-2 text-ink-red-2',
-        'red-subtle': 'bg-surface-red-2 text-ink-red-2',
+        'red-solid': 'bg-surface-red-2 text-ink-red-4',
+        'red-subtle': 'bg-surface-red-2 text-ink-red-4',
         'red-outline':
-          'bg-surface-red-2 text-ink-red-2 border border-outline-red-1',
-        'red-ghost': 'text-ink-red-2',
+          'bg-surface-red-2 text-ink-red-4 border border-outline-red-1',
+        'red-ghost': 'text-ink-red-4',
       }
       const disabledClasses = disabledClassesMap[themeVariant]
 
+      // The pressed look, held. Same tokens the `active:` pseudo-class uses,
+      // minus a hover state — an open menu shouldn't lighten under the cursor.
+      const activeClassesMap: Record<ThemeVariant, string> = {
+        'gray-solid': 'text-ink-base bg-surface-gray-8',
+        'gray-subtle': 'text-ink-gray-8 bg-surface-gray-4',
+        'gray-outline':
+          'text-ink-gray-8 bg-surface-gray-4 border border-outline-gray-3',
+        'gray-ghost': 'text-ink-gray-8 bg-surface-gray-4',
+
+        'blue-solid': 'text-ink-base bg-surface-blue-8',
+        'blue-subtle': 'text-ink-blue-5 bg-surface-blue-4',
+        'blue-outline':
+          'text-ink-blue-5 bg-surface-blue-4 border border-outline-blue-4',
+        'blue-ghost': 'text-ink-blue-5 bg-surface-blue-4',
+
+        'green-solid': 'text-ink-base bg-surface-green-9',
+        'green-subtle': 'text-ink-green-8 bg-surface-green-4',
+        'green-outline':
+          'text-ink-green-8 bg-surface-green-4 border border-outline-green-5',
+        'green-ghost': 'text-ink-green-8 bg-surface-green-4',
+
+        'red-solid': 'text-ink-base bg-surface-red-9',
+        'red-subtle': 'text-ink-red-7 bg-surface-red-4',
+        'red-outline':
+          'text-ink-red-7 bg-surface-red-3 border border-outline-red-3',
+        'red-ghost': 'text-ink-red-7 bg-surface-red-4',
+      }
+      const activeClasses = activeClassesMap[themeVariant]
+
+      // One of the three replaces the others outright rather than layering, so
+      // conflicting `bg-*` utilities never race on stylesheet order.
+      const stateClasses = props.disabled
+        ? disabledClasses
+        : isActive.value
+          ? activeClasses
+          : variantClasses
+
       const sizeClasses = isIconButton.value
         ? {
-            xs: 'h-6 w-6 rounded',
-            sm: 'h-7 w-7 rounded',
-            md: 'h-8 w-8 rounded',
-            lg: 'h-10 w-10 rounded-md',
+            xs: 'h-6 w-6 rounded-3',
+            sm: 'h-7 w-7 rounded-4',
+            md: 'h-8 w-8 rounded-4',
+            lg: 'h-10 w-10 rounded-5',
           }[props.size]
         : {
-            xs: 'h-6 text-sm px-1.5 rounded',
-            sm: 'h-7 text-base px-2 rounded',
-            md: 'h-8 text-base font-medium px-2.5 rounded',
-            lg: 'h-10 text-lg font-medium px-3 rounded-md',
+            xs: 'h-6 text-xs px-1.5 rounded-3',
+            sm: 'h-7 text-base px-2 rounded-4',
+            md: 'h-8 text-base-medium px-2.5 rounded-4',
+            lg: 'h-10 text-lg-medium px-3 rounded-5',
           }[props.size]
 
       return [
-        'inline-flex items-center justify-center gap-2 transition-colors focus:outline-none shrink-0',
+        'inline-flex items-center justify-center gap-2 transition-colors shrink-0',
         // Only an explicit `disabled` dims the button. A `loading` button keeps
         // its normal look (it's still non-interactive via the native `disabled`
         // attr below); `pointer-events-none` suppresses hover/active visuals so
         // it doesn't appear clickable while busy.
-        props.disabled ? disabledClasses : variantClasses,
+        stateClasses,
         props.loading && !props.disabled ? 'pointer-events-none' : '',
         focusClasses,
         sizeClasses,
       ]
     })
-
-    const rootRef = ref()
-    expose({ rootRef })
 
     // The dynamic root: router link, external anchor, or native button. Using the
     // raw 'button' string (not <component :is>) sidesteps the historic recursion
@@ -195,11 +251,11 @@ export default defineComponent({
       if (!isDisabled.value && props.route) {
         return { is: RouterLink, props: { to: props.route } }
       }
-      if (!isDisabled.value && props.link) {
+      if (!isDisabled.value && props.href) {
         return {
           is: 'a',
           props: {
-            href: props.link,
+            href: props.href,
             target: '_blank',
             rel: 'noreferrer noopener',
           },
@@ -211,10 +267,10 @@ export default defineComponent({
       }
     })
 
-    /** Resolve an icon prop to a vnode: lucide class-span, FeatherIcon, or component. */
+    /** Resolve an icon prop to a vnode: lucide class-span or component. */
     function renderIcon(
       icon: string | Component | undefined,
-      featherHidden: boolean,
+      propName: string,
     ): VNode | null {
       if (!icon) return null
       if (typeof icon === 'string') {
@@ -224,11 +280,9 @@ export default defineComponent({
             'aria-hidden': 'true',
           })
         }
-        return h(FeatherIcon, {
-          name: icon,
-          class: slotClasses.value,
-          ...(featherHidden ? { 'aria-hidden': 'true' } : {}),
-        })
+        // Unsupported string (e.g. a bare feather-style name) — warned
+        // above via warnUnsupportedIconString. Nothing to render.
+        return null
       }
       return h(icon, { class: slotClasses.value })
     }
@@ -240,20 +294,21 @@ export default defineComponent({
         // spinner inherits the button's text color.
         return h(Spinner, {
           class: {
-            'size-4': props.size === 'xs' || props.size === 'sm',
+            'size-3.5': props.size === 'xs',
+            'size-4': props.size === 'sm',
             'size-4.5': props.size === 'md',
             'size-5': props.size === 'lg',
           },
         })
       }
       if (slots.prefix) return slots.prefix()
-      return renderIcon(props.iconLeft, true)
+      return renderIcon(props.iconLeft, 'iconLeft')
     }
 
     function renderMain() {
       if (props.loading && props.loadingText) return props.loadingText
       if (isIconButton.value && !props.loading) {
-        if (props.icon) return renderIcon(props.icon, false)
+        if (props.icon) return renderIcon(props.icon, 'icon')
         if (slots.icon) return slots.icon()
         if (hasLucideIconInDefaultSlot.value) {
           return h(
@@ -266,14 +321,19 @@ export default defineComponent({
       }
       return h(
         'span',
-        { class: ['truncate', { 'sr-only': isIconButton.value }] },
+        {
+          class: [
+            'truncate leading-tighter',
+            { 'sr-only': isIconButton.value },
+          ],
+        },
         slots.default?.() ?? props.label,
       )
     }
 
     function renderSuffix() {
       if (slots.suffix) return slots.suffix()
-      return renderIcon(props.iconRight, true)
+      return renderIcon(props.iconRight, 'iconRight')
     }
 
     return () => {
@@ -284,9 +344,8 @@ export default defineComponent({
         ...rootProps,
         ...restAttrs,
         class: [attrClass, buttonClasses.value],
-        'aria-label': props.label,
+        'aria-label': props.label ?? restAttrs['aria-label'],
         'aria-busy': props.loading || undefined,
-        ref: rootRef,
       }
       const button =
         typeof is === 'string'

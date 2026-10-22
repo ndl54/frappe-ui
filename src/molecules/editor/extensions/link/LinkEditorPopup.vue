@@ -1,7 +1,7 @@
 <template>
   <EditorPopover
     dialog-label="Edit link"
-    content-class="flex min-w-60 max-w-80 items-center gap-1 rounded-md p-1"
+    content-class="flex min-w-60 max-w-80 items-center gap-1 rounded-5 p-1"
     :autofocus="false"
   >
     <template v-if="edit">
@@ -43,7 +43,7 @@
       />
       <div class="pl-1.5 flex-1 min-w-0 flex">
         <a
-          class="truncate text-sm text-ink-gray-8 border-b border-outline-gray-2 hover:border-outline-gray-3"
+          class="truncate text-sm text-ink-gray-9 border-b border-outline-gray-2 hover:border-outline-gray-3"
           :title="_href"
           :href="_href"
           target="_blank"
@@ -155,7 +155,7 @@ const copyLink = async () => {
 
 const focusInput = async () => {
   await nextTick()
-  const el = input.value?.el
+  const el = input.value?.inputElement
   if (!el) return
   // preventScroll: the popup is teleported to <body> and positioned async by
   // floating-ui, so at focus time the input may still be at the top of the
@@ -189,7 +189,7 @@ const maybePrefillFromClipboard = async () => {
   if (!isValidLinkHref(normalized)) return
   _href.value = normalized
   await nextTick()
-  input.value?.el?.select()
+  input.value?.inputElement?.select()
 }
 
 /**

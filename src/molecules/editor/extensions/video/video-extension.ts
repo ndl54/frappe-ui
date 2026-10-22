@@ -17,25 +17,28 @@ import {
   Node as NodeExtension,
   nodeInputRule,
   mergeAttributes,
+  type Editor,
 } from '@tiptap/core'
 import { VueNodeViewRenderer } from '@tiptap/vue-3'
 import MediaNodeView from '#molecules/editor/components/MediaNodeView.vue'
-import type { UploadedFile } from '#utils/useFileUpload'
 import {
   resolveUploadOptions,
   type MediaUploadOptions,
+  type UploadFunction,
 } from '#molecules/editor/extensions/shared/media-upload-engine'
 import { createMediaPlugin } from '#molecules/editor/extensions/shared/media-plugin'
+import { captionAttribute } from '#molecules/editor/extensions/shared/media-attributes'
 import { findNodeByUploadId } from '#molecules/editor/extensions/shared/node-view'
 import { pickFiles } from '#molecules/editor/extensions/shared/file-picker'
 import { videoConfig, videoEngine } from './video-config'
 
 export interface VideoExtensionOptions {
   /**
-   * Function to handle video uploads
+   * Function to handle video uploads. Receives optional request options
+   * (abort signal + progress callback) as the second argument.
    * @default null
    */
-  uploadFunction: ((file: File) => Promise<UploadedFile>) | null
+  uploadFunction: UploadFunction | null
 
   /**
    * HTML attributes to add to the video element
@@ -93,7 +96,9 @@ export const VideoExtension = NodeExtension.create<VideoExtensionOptions>({
   addAttributes() {
     return {
       src: { default: null },
+      /** Screen-reader description. Never rendered as visible text. */
       alt: { default: null },
+      caption: captionAttribute,
       title: { default: null },
       width: { default: null },
       height: { default: null },
@@ -103,6 +108,25 @@ export const VideoExtension = NodeExtension.create<VideoExtensionOptions>({
       loading: {
         default: false,
         parseHTML: () => false,
+      },
+      align: {
+        default: 'center',
+        parseHTML: (element) => {
+          const align = (
+            element.getAttribute('data-align') ||
+            element.getAttribute('align') ||
+            'center'
+          ).toLowerCase()
+          if (['left', 'center', 'right'].includes(align)) {
+            return align as 'left' | 'center' | 'right'
+          }
+          return 'center'
+        },
+        renderHTML: (attributes) => {
+          return {
+            'data-align': attributes.align || 'center',
+          }
+        },
       },
       float: {
         default: null,
@@ -177,7 +201,10 @@ export const VideoExtension = NodeExtension.create<VideoExtensionOptions>({
         (attributes: SetVideoOptions) =>
         ({ commands }) => {
           // F4: reject an empty/blank src instead of inserting a broken node.
-          if (typeof attributes.src !== 'string' || attributes.src.trim() === '') {
+          if (
+            typeof attributes.src !== 'string' ||
+            attributes.src.trim() === ''
+          ) {
             return false
           }
           return commands.insertContent({
@@ -205,7 +232,8 @@ export const VideoExtension = NodeExtension.create<VideoExtensionOptions>({
         () =>
         ({ editor }) => {
           void pickFiles({ accept: 'video/*' }).then((files) => {
-            if (!editor.isDestroyed && files[0]) editor.commands.uploadVideo(files[0])
+            if (!editor.isDestroyed && files[0])
+              editor.commands.uploadVideo(files[0])
           })
           return true
         },
@@ -220,6 +248,40 @@ export const VideoExtension = NodeExtension.create<VideoExtensionOptions>({
           }
           void videoEngine.reupload(editor, pos, resolve())
           return true
+        },
+
+      replaceVideo:
+        (pos: number, file: File) =>
+        ({ editor }: { editor: Editor }) => {
+          const node = editor.view.state.doc.nodeAt(pos)
+          if (!node || node.type.name !== this.name) return false
+          void videoEngine.uploadReplace(
+            file,
+            editor,
+            pos,
+            resolve(),
+            node.attrs,
+          )
+          return true
+        },
+
+      setVideoOptions:
+        (
+          options: Partial<
+            Pick<SetVideoOptions, 'autoplay' | 'loop' | 'muted'>
+          >,
+        ) =>
+        ({
+          commands,
+        }: {
+          commands: {
+            updateAttributes: (
+              name: string,
+              attrs: Record<string, unknown>,
+            ) => boolean
+          }
+        }) => {
+          return commands.updateAttributes(this.name, options)
         },
     }
   },

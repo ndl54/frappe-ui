@@ -4,6 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createApp, defineComponent, h, nextTick, ref, toRaw } from 'vue'
+import { _resetWarnDeprecated } from '../../utils/warnDeprecated'
 
 const editors: any[] = []
 
@@ -34,6 +35,22 @@ vi.mock('@tiptap/core', () => {
     }
     content: any
 
+    // `useEditor` normalizes the parsed document through a chain, guarded by
+    // `can()`; the real behaviour is covered against a real editor in
+    // list-join.test.ts, so nothing to join is the right answer here.
+    can() {
+      return { joinAdjacentLists: () => false }
+    }
+
+    chain() {
+      const api: any = {
+        joinAdjacentLists: () => api,
+        setMeta: () => api,
+        run: () => true,
+      }
+      return api
+    }
+
     constructor(options: any) {
       this.options = options
       this.content = options.content ?? ''
@@ -51,7 +68,13 @@ vi.mock('@tiptap/core', () => {
     }
 
     getJSON() {
-      return typeof this.content === 'object' ? this.content : { type: 'doc', content: [] }
+      return typeof this.content === 'object'
+        ? this.content
+        : { type: 'doc', content: [] }
+    }
+
+    getMarkdown() {
+      return typeof this.content === 'string' ? this.content : '# json'
     }
 
     setEditable(value: boolean) {
@@ -63,8 +86,27 @@ vi.mock('@tiptap/core', () => {
     }
   }
 
-  return { Editor, Extension, Node, Mark, mergeAttributes, nodeInputRule, markInputRule }
+  return {
+    Editor,
+    Extension,
+    Node,
+    Mark,
+    mergeAttributes,
+    nodeInputRule,
+    markInputRule,
+  }
 })
+
+vi.mock('@tiptap/markdown', () => ({
+  Markdown: {
+    name: 'markdown',
+    configure: vi.fn((options: any) => ({
+      name: 'markdown',
+      options,
+      configured: true,
+    })),
+  },
+}))
 
 vi.mock('@tiptap/vue-3', () => ({
   EditorContent: defineComponent({
@@ -85,6 +127,7 @@ vi.mock('@tiptap/vue-3', () => ({
 
 beforeEach(() => {
   editors.length = 0
+  _resetWarnDeprecated()
 })
 
 describe('frappe-ui/editor minimal primitives', () => {
@@ -100,7 +143,7 @@ describe('frappe-ui/editor minimal primitives', () => {
     expect(editor.InsertIframe).toBeTruthy()
   })
 
-  it('wires the public SuggestionExtension component into the suggestion renderer', async () => {
+  it('wires the public SuggestionExtension list component into the suggestion renderer', async () => {
     const component = defineComponent({ setup: () => () => h('div') })
     const { SuggestionExtension } = await import('./index')
 
@@ -108,12 +151,68 @@ describe('frappe-ui/editor minimal primitives', () => {
       name: 'people',
       trigger: '@',
       items: [],
-      component,
+      listComponent: component,
       command: vi.fn(),
     })
 
     const options = (extension as any).addOptions()
     expect(typeof options.suggestion.render).toBe('function')
+  })
+
+  it('warns in development when SuggestionExtension receives the old component key', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { SuggestionExtension } = await import('./index')
+
+    SuggestionExtension.configure({
+      name: 'people',
+      trigger: '@',
+      items: [],
+      component: defineComponent({ setup: () => () => h('div') }),
+      command: vi.fn(),
+    } as any)
+    SuggestionExtension.configure({
+      name: 'tags',
+      trigger: '#',
+      items: [],
+      component: defineComponent({ setup: () => () => h('div') }),
+      command: vi.fn(),
+    } as any)
+
+    expect(warn).toHaveBeenCalledWith(
+      '[frappe-ui] SuggestionExtension.component was removed. Use SuggestionExtension.listComponent instead.',
+    )
+    expect(warn).toHaveBeenCalledTimes(1)
+    warn.mockRestore()
+  })
+
+  it('forwards allowSpaces from SuggestionExtension options to the suggestion plugin', async () => {
+    const { SuggestionExtension } = await import('./index')
+
+    const extension = SuggestionExtension.configure({
+      name: 'fields',
+      trigger: '{{',
+      items: [],
+      allowSpaces: true,
+      command: vi.fn(),
+    })
+
+    const options = (extension as any).addOptions()
+    expect(options.suggestion.allowSpaces).toBe(true)
+  })
+
+  it('forwards allowedPrefixes from SuggestionExtension options to the suggestion plugin', async () => {
+    const { SuggestionExtension } = await import('./index')
+
+    const extension = SuggestionExtension.configure({
+      name: 'people',
+      trigger: '@',
+      items: [],
+      allowedPrefixes: [' ', '('],
+      command: vi.fn(),
+    })
+
+    const options = (extension as any).addOptions()
+    expect(options.suggestion.allowedPrefixes).toEqual([' ', '('])
   })
 
   it('creates and destroys a shallow editor ref', async () => {
@@ -162,7 +261,42 @@ describe('frappe-ui/editor minimal primitives', () => {
 
     content.value = '<p>External</p>'
     await nextTick()
-    expect(editor.commands.setContent).toHaveBeenCalledWith('<p>External</p>', { emitUpdate: false })
+    expect(editor.commands.setContent).toHaveBeenCalledWith('<p>External</p>', {
+      emitUpdate: false,
+    })
+  })
+
+  it('applies an external HTML write that restores an earlier emitted value', async () => {
+    const { useEditor } = await import('./index')
+    const content = ref('<p>Hello</p>')
+
+    createApp(
+      defineComponent({
+        setup() {
+          useEditor({ content, extensions: [] })
+          return () => null
+        },
+      }),
+    ).mount(document.createElement('div'))
+
+    const editor = editors[0]
+
+    // An internal edit flows out, so '<p>Internal</p>' is the last emitted value.
+    editor.content = '<p>Internal</p>'
+    editor.options.onUpdate({ editor })
+
+    content.value = '<p>External</p>'
+    await nextTick()
+    expect(editor.getHTML()).toBe('<p>External</p>')
+
+    // Back to the earlier value: it no longer matches what the editor holds, so
+    // it is an external write like any other.
+    content.value = '<p>Internal</p>'
+    await nextTick()
+    expect(editor.commands.setContent).toHaveBeenLastCalledWith(
+      '<p>Internal</p>',
+      { emitUpdate: false },
+    )
   })
 
   it('binds JSON content bidirectionally without echoing external writes back', async () => {
@@ -184,12 +318,113 @@ describe('frappe-ui/editor minimal primitives', () => {
     content.value = external
     await nextTick()
 
-    expect(editor.commands.setContent).toHaveBeenCalledWith(external, { emitUpdate: false })
+    expect(editor.commands.setContent).toHaveBeenCalledWith(external, {
+      emitUpdate: false,
+    })
     expect(toRaw(content.value)).toBe(external)
 
-    editor.content = { type: 'doc', content: [{ type: 'paragraph', content: [] }] }
+    editor.content = {
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [] }],
+    }
     editor.options.onUpdate({ editor })
     expect(toRaw(content.value)).toBe(editor.content)
+
+    const calls = editor.commands.setContent.mock.calls.length
+    await nextTick()
+    expect(editor.commands.setContent).toHaveBeenCalledTimes(calls)
+  })
+
+  it('clears an untouched JSON editor when content is set to undefined', async () => {
+    const { useEditor } = await import('./index')
+    const content = ref<any>({ type: 'doc', content: [{ type: 'paragraph' }] })
+
+    createApp(
+      defineComponent({
+        setup() {
+          useEditor({ content, format: 'json', extensions: [] })
+          return () => null
+        },
+      }),
+    ).mount(document.createElement('div'))
+
+    const editor = editors[0]
+
+    // Nothing has been typed, so no value has been emitted out yet. The bounce
+    // guard must not read that as "we wrote this ourselves".
+    content.value = undefined
+    await nextTick()
+
+    expect(editor.commands.setContent).toHaveBeenCalledWith('', {
+      emitUpdate: false,
+    })
+  })
+
+  it('sets markdown contentType and warns when the Markdown extension is missing', async () => {
+    const { useEditor } = await import('./index')
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    createApp(
+      defineComponent({
+        setup() {
+          useEditor({
+            content: ref('# Hi'),
+            format: 'markdown',
+            extensions: [],
+          })
+          return () => null
+        },
+      }),
+    ).mount(document.createElement('div'))
+
+    expect(editors[0].options.contentType).toBe('markdown')
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "format: 'markdown' needs the Markdown extension",
+      ),
+    )
+    warn.mockRestore()
+  })
+
+  it('binds markdown content in both directions without rewriting equal external markdown', async () => {
+    const { useEditor, Markdown } = await import('./index')
+    const content = ref('# Hello')
+
+    createApp(
+      defineComponent({
+        setup() {
+          useEditor({
+            content,
+            format: 'markdown',
+            extensions: [Markdown as any],
+          })
+          return () => null
+        },
+      }),
+    ).mount(document.createElement('div'))
+
+    const editor = editors[0]
+    expect(editor.options.content).toBe('# Hello')
+
+    // Internal edit flows out through getMarkdown() and must not bounce back.
+    editor.content = '# Internal'
+    editor.options.onUpdate({ editor })
+    expect(content.value).toBe('# Internal')
+    await nextTick()
+    expect(editor.commands.setContent).not.toHaveBeenCalled()
+
+    // External write equal to the current document is a no-op.
+    content.value = '# Internal'
+    await nextTick()
+    expect(editor.commands.setContent).not.toHaveBeenCalled()
+
+    // A genuinely new external value is parsed as markdown.
+    content.value = '# External'
+    await nextTick()
+    expect(editor.commands.setContent).toHaveBeenCalledWith('# External', {
+      emitUpdate: false,
+      contentType: 'markdown',
+    })
   })
 
   it('keeps editable reactive', async () => {

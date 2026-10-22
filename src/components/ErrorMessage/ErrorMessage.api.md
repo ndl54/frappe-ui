@@ -7,13 +7,13 @@
   const propsData = [
   {
     name: 'message',
-    description: 'The error message to display. Can be a string or an Error object',
+    description: 'The error message to display.',
     required: false,
-    type: 'string | Error'
+    type: 'ErrorMessageValue'
   }
 ]
 </script>
+
 ## API Reference
 
-<PropsTable name="ErrorMessage" :data="propsData"/> 
-
+<PropsTable name="ErrorMessage" :data="propsData"/>

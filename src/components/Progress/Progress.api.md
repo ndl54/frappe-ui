@@ -15,7 +15,7 @@
     name: 'size',
     description: 'Size of the progress bar: "sm" | "md" | "lg" | "xl"',
     required: false,
-    type: '"md" | "sm" | "lg" | "xl"',
+    type: '"sm" | "md" | "lg" | "xl"',
     default: '"sm"'
   },
   {
@@ -34,31 +34,23 @@
   },
   {
     name: 'intervals',
-    description: 'Whether to show interval markers on the progress bar',
+    description: 'Number of interval markers to show; omit for a continuous progress bar',
     required: false,
-    type: 'boolean',
-    default: 'false'
-  },
-  {
-    name: 'intervalCount',
-    description: 'Number of intervals to display if `intervals` is true',
-    required: false,
-    type: 'number',
-    default: '6'
+    type: 'number'
   }
 ]
 
   const slotsData = [
   {
     name: 'hint',
-    description: 'Custom content for the hint area (usually displays the progress value). \nIf not provided, defaults to showing `props.value` followed by `%`.',
+    description: 'Custom content for the hint area (usually displays the progress value).\nIf not provided, defaults to showing `props.value` followed by `%`.',
     type: 'any'
   }
 ]
 </script>
+
 ## API Reference
 
-<PropsTable name="Progress" :data="propsData"/> 
+<PropsTable name="Progress" :data="propsData"/>
 
-<SlotsTable :data="slotsData"/> 
-
+<SlotsTable :data="slotsData"/>

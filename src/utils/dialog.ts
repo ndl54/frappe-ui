@@ -6,17 +6,17 @@ import {
   type Component,
   type Ref,
 } from 'vue'
+import { moduleSingleton } from './moduleSingleton'
 import Dialog from '../components/Dialog/Dialog.vue'
 import { Button } from '../components/Button'
 import FormControl from '../components/FormControl/FormControl.vue'
 import ErrorMessage from '../components/ErrorMessage/ErrorMessage.vue'
-import type {
-  DialogIcon,
-  DialogSize,
-  DialogTheme,
-} from '../components/Dialog/types'
+import type { DialogSize, DialogTheme } from '../components/Dialog/types'
 import type { ButtonProps } from '../components/Button'
-import type { ComboboxOption } from '../components/Combobox/types'
+import type {
+  ComboboxCustomOption,
+  ComboboxOption,
+} from '../components/Combobox/types'
 
 // -- Public types --------------------------------------------------------
 
@@ -45,7 +45,7 @@ export interface PromptControl extends DialogControl {
  * If `onClick` rejects, the thrown error is rendered inline via `setError`.
  * If `onClick` is omitted, the action simply closes the dialog.
  */
-export type DialogAction = Omit<ButtonProps, 'onClick' | 'loading'> & {
+export type ImperativeDialogAction = Omit<ButtonProps, 'onClick' | 'loading'> & {
   label: string
   onClick?: (ctx: DialogControl) => void | Promise<void>
 }
@@ -59,8 +59,8 @@ export interface ConfirmArgs {
   cancelLabel?: string
   /** Colors the confirm button + picks the default icon. */
   theme?: DialogTheme
-  /** Overrides the theme-derived default icon. */
-  icon?: string | DialogIcon
+  /** Overrides the theme-derived default icon. A `lucide-*` class name or a Vue component. */
+  icon?: string | Component
   /** @default 'md' */
   size?: DialogSize
   /**
@@ -90,7 +90,7 @@ export interface ConfirmArgs {
    * state is tracked independently. When set, `confirmLabel`, `cancelLabel`,
    * and `onConfirm` are ignored.
    */
-  actions?: DialogAction[]
+  actions?: ImperativeDialogAction[]
 }
 
 /**
@@ -141,8 +141,8 @@ export type PromptField =
        */
       options: ComboboxOption[]
       /**
-       * Allow the typed query through as the value when no option matches.
-       * Maps to the underlying `Combobox`'s `allowCustomValue` prop.
+       * Adds a "Create …" row that commits the typed query as the value when
+       * no option matches.
        */
       allowCreate?: boolean
     })
@@ -156,7 +156,8 @@ export interface PromptArgs {
   /** @default 'Cancel' */
   cancelLabel?: string
   theme?: DialogTheme
-  icon?: string | DialogIcon
+  /** Overrides the theme-derived default icon. A `lucide-*` class name or a Vue component. */
+  icon?: string | Component
   /** @default 'md' */
   size?: DialogSize
   /**
@@ -185,11 +186,20 @@ interface DialogInstance {
   component: Component
 }
 
-export const dialogs: Ref<DialogInstance[]> = ref([])
-let nextId = 0
+// The stack is written by `dialog.*` (a .ts module, so Vite may pre-bundle it)
+// and read by <Dialogs /> (an SFC, always raw source). A global singleton keeps
+// both sides on one ref even when the package is instantiated twice — see
+// moduleSingleton. The id counter shares the store so ids stay unique across
+// copies; two counters would collide and hand Vue duplicate `:key`s.
+const stack = moduleSingleton('dialog-stack', () => ({
+  dialogs: ref<DialogInstance[]>([]),
+  nextId: 0,
+}))
+
+export const dialogs: Ref<DialogInstance[]> = stack.dialogs
 
 function add(component: Component): number {
-  const id = nextId++
+  const id = stack.nextId++
   dialogs.value = [...dialogs.value, { id, component }]
   return id
 }
@@ -202,7 +212,7 @@ function remove(id: number) {
 
 const THEME_DEFAULT_ICON: Record<DialogTheme, string> = {
   red: 'lucide-alert-triangle',
-  yellow: 'lucide-alert-triangle',
+  amber: 'lucide-alert-triangle',
   blue: 'lucide-info',
   green: 'lucide-check-circle',
 }
@@ -211,20 +221,17 @@ type ButtonTheme = NonNullable<ButtonProps['theme']>
 
 function themeToButtonTheme(theme?: DialogTheme): ButtonTheme | undefined {
   if (!theme) return undefined
-  // Button doesn't have `yellow`; fall back to default solid (no theme).
-  if (theme === 'yellow') return undefined
+  // Button doesn't have `amber`; fall back to default solid (no theme).
+  if (theme === 'amber') return undefined
   return theme as ButtonTheme
 }
 
 function resolveIcon(
   theme?: DialogTheme,
-  icon?: string | DialogIcon,
-): DialogIcon | undefined {
-  if (icon) {
-    if (typeof icon === 'string') return { name: icon, theme }
-    return { ...icon, theme: icon.theme ?? theme }
-  }
-  if (theme) return { name: THEME_DEFAULT_ICON[theme], theme }
+  icon?: string | Component,
+): string | Component | undefined {
+  if (icon) return icon
+  if (theme) return THEME_DEFAULT_ICON[theme]
   return undefined
 }
 
@@ -274,12 +281,12 @@ function extractErrorMessage(err: unknown): string {
 
 // -- confirm -------------------------------------------------------------
 
-// Wraps a `DialogAction.onClick` so each button tracks its own loading state.
+// Wraps an `ImperativeDialogAction.onClick` so each button tracks its own loading state.
 // Awaits the user-supplied handler, auto-closes on success, and surfaces
 // thrown errors inline via the shared `setError` channel (which also resets
 // every button's loading flag).
 function makeActionRunner(
-  action: DialogAction,
+  action: ImperativeDialogAction,
   state: LifecycleState,
   actionStates: Array<{ loading: boolean }>,
   index: number,
@@ -408,6 +415,7 @@ export function confirm(args: ConfirmArgs): DialogHandle {
             },
             title: args.title,
             icon: resolvedIcon,
+            theme: args.theme,
             size: args.size || 'md',
             dismissible,
             showCloseButton: dismissible,
@@ -443,6 +451,43 @@ export function confirm(args: ConfirmArgs): DialogHandle {
 function initialFieldValue(field: PromptField): any {
   if (field.defaultValue !== undefined) return field.defaultValue
   return field.type === 'checkbox' ? false : ''
+}
+
+// Labels a query could already match, flattened across grouped and flat
+// options. Custom rows are skipped — they are affordances, not values.
+function selectableLabels(options: ComboboxOption[] = []): string[] {
+  return options.flatMap((option) => {
+    if (typeof option === 'string') return [option]
+    if (!option || typeof option !== 'object') return []
+    if ('group' in option) return selectableLabels(option.options)
+    if ((option as any).type === 'custom') return []
+    return [String((option as any).label ?? (option as any).value ?? '')]
+  })
+}
+
+// `allowCreate` is a create-new custom row, the same shape any consumer would
+// write by hand. `condition` hides it once the query matches an existing
+// option, and `onClick` commits the typed text as the field's value.
+function createNewOption(
+  options: ComboboxOption[],
+  commit: (value: string) => void,
+): ComboboxCustomOption {
+  const existing = selectableLabels(options).map((label) => label.toLowerCase())
+
+  return {
+    type: 'custom',
+    key: '__create__',
+    label: 'Create',
+    slot: 'create',
+    condition: ({ query }) => {
+      const trimmed = query.trim()
+      return Boolean(trimmed) && !existing.includes(trimmed.toLowerCase())
+    },
+    onClick: ({ query }) => {
+      const trimmed = query.trim()
+      if (trimmed) commit(trimmed)
+    },
+  }
 }
 
 export function prompt(args: PromptArgs): DialogHandle {
@@ -545,24 +590,41 @@ export function prompt(args: PromptArgs): DialogHandle {
     // Combobox-only knobs are forwarded as fallthrough attrs; FormControl
     // re-emits them onto the underlying <Combobox> via `controlAttrs`.
     const comboboxAttrs =
-      field.type === 'combobox'
-        ? { openOnClick: true, allowCustomValue: field.allowCreate }
-        : null
+      field.type === 'combobox' ? { openOnClick: true } : null
+
+    const allowCreate = field.type === 'combobox' && field.allowCreate
+
+    const options = allowCreate
+      ? [...field.options, createNewOption(field.options, onUpdate)]
+      : (field as any).options
 
     const modelValue =
-      field.type === 'combobox' ? values[field.name] || null : values[field.name]
+      field.type === 'combobox'
+        ? values[field.name] || null
+        : values[field.name]
 
-    const fieldNode = h(FormControl, {
-      label: field.label,
-      description: field.description,
-      type: (field.type as any) || 'text',
-      required: field.required,
-      placeholder: field.placeholder,
-      options: (field as any).options,
-      modelValue,
-      'onUpdate:modelValue': onUpdate,
-      ...comboboxAttrs,
-    })
+    const fieldNode = h(
+      FormControl,
+      {
+        label: field.label,
+        description: field.description,
+        type: (field.type as any) || 'text',
+        required: field.required,
+        placeholder: field.placeholder,
+        options,
+        modelValue,
+        'onUpdate:modelValue': onUpdate,
+        ...comboboxAttrs,
+      },
+      // FormControl forwards every slot to the control, so this reaches the
+      // create row and lets it echo what the user typed.
+      allowCreate
+        ? {
+            'item-create': ({ query }: { query: string }) =>
+              h('span', { class: 'truncate' }, `Create "${query}"`),
+          }
+        : undefined,
+    )
 
     return h('div', { key: field.name, class: 'space-y-1' }, [
       fieldNode,
@@ -585,6 +647,7 @@ export function prompt(args: PromptArgs): DialogHandle {
             },
             title: args.title,
             icon: resolvedIcon,
+            theme: args.theme,
             size: args.size || 'md',
             dismissible,
             showCloseButton: dismissible,

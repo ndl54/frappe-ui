@@ -32,7 +32,7 @@ describe('<Button />', () => {
       },
     })
 
-    cy.get('button').should('have.class', 'bg-blue-500')
+    cy.get('button').should('have.class', 'bg-surface-blue-6')
     cy.get('button').should('contain.text', 'Submit')
   })
 
@@ -44,7 +44,23 @@ describe('<Button />', () => {
       },
     })
 
-    cy.get('button').should('have.class', 'h-10 text-lg')
+    cy.get('button').should('have.class', 'h-10')
+    cy.get('button').should('have.class', 'text-lg-medium')
+  })
+
+  it('renders xs size', () => {
+    cy.mount(Button, {
+      props: {
+        size: 'xs',
+        label: 'Extra Small Button',
+      },
+    })
+
+    cy.get('button')
+      .should('have.class', 'h-6')
+      .and('have.class', 'text-xs')
+      .and('have.class', 'px-1.5')
+      .and('have.class', 'rounded-3')
   })
 
   it('handles loading state', () => {
@@ -151,10 +167,10 @@ describe('<Button />', () => {
     cy.get('button').should('not.exist')
   })
 
-  it('renders an anchor when link is provided', () => {
+  it('renders an anchor when href is provided', () => {
     cy.mount(Button, {
       props: {
-        link: 'https://frappe.io/docs',
+        href: 'https://frappe.io/docs',
         label: 'Docs',
       },
     })
@@ -177,7 +193,7 @@ describe('<Button />', () => {
     cy.get('button').should('be.disabled')
   })
 
-  it('falls back to a disabled button when route or link is blocked', () => {
+  it('falls back to a disabled button when route or href is blocked', () => {
     const router = createTestRouter()
 
     cy.mount(Button, {
@@ -195,7 +211,7 @@ describe('<Button />', () => {
 
     cy.mount(Button, {
       props: {
-        link: 'https://frappe.io/docs',
+        href: 'https://frappe.io/docs',
         loading: true,
         loadingText: 'Loading docs',
         label: 'Docs',
@@ -203,5 +219,41 @@ describe('<Button />', () => {
     })
     cy.get('button').should('be.disabled').and('contain.text', 'Loading docs')
     cy.get('a').should('not.exist')
+  })
+
+  it('holds the pressed look while data-state is open or active', () => {
+    cy.mount(Button, {
+      props: { label: 'Bold' },
+      attrs: { 'data-state': 'active' },
+    })
+    cy.get('button').should('have.class', 'bg-surface-gray-4')
+
+    cy.mount(Button, {
+      props: { label: 'Bold' },
+      attrs: { 'data-state': 'open' },
+    })
+    cy.get('button').should('have.class', 'bg-surface-gray-4')
+
+    cy.mount(Button, {
+      props: { label: 'Bold' },
+      attrs: { 'data-state': 'closed' },
+    })
+    cy.get('button').should('have.class', 'bg-surface-gray-2')
+  })
+
+  it('does not read the tooltip’s own state as active', () => {
+    cy.mount(Button, { props: { label: 'Hi', tooltip: 'Tip' } })
+    cy.get('button').should('have.class', 'bg-surface-gray-2')
+    cy.get('button').trigger('mouseenter')
+    cy.get('button').should('have.class', 'bg-surface-gray-2')
+  })
+
+  it('disabled outranks active', () => {
+    cy.mount(Button, {
+      props: { label: 'Bold', disabled: true },
+      attrs: { 'data-state': 'active' },
+    })
+    cy.get('button').should('have.class', 'text-ink-gray-4')
+    cy.get('button').should('not.have.class', 'bg-surface-gray-4')
   })
 })

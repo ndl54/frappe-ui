@@ -1,6 +1,7 @@
 import { createFetch } from '@vueuse/core'
 import { docStore } from './docStore'
 import { listStore } from './useList/listStore'
+import { LOCAL_WRITE, writeGate, type DispatchStamp } from './writeGate'
 
 export class FrappeResponseError extends Error {
   title: string
@@ -25,16 +26,83 @@ export class FrappeResponseError extends Error {
     this.indicator = options.indicator
 
     // Maintains proper stack trace for where our error was thrown (only available on V8)
-    if (Error.captureStackTrace) {
-      Error.captureStackTrace(this, FrappeResponseError)
+    const captureStackTrace = (
+      Error as ErrorConstructor & {
+        captureStackTrace?: (target: object, constructor?: Function) => void
+      }
+    ).captureStackTrace
+    if (captureStackTrace) {
+      captureStackTrace(this, FrappeResponseError)
     }
   }
 }
 
+// This is where a request takes its sequence number: every request stamped on
+// dispatch, the stamp carried on its Response, and the stores gate their
+// writes on it. See `writeGate` for the rule — this module is only the place
+// the number is minted and the place it is read back off the response.
+export type { DispatchStamp } from './writeGate'
+
+const dispatchStamps = new WeakMap<Response, DispatchStamp>()
+
+// Dispatch order again, a step earlier. `writeGate.next` numbers a request
+// when its fetch runs; this numbers it at the top of `execute`, before the
+// hook chain awaits anything, because `useCall.submit` has to tell a request
+// minted after it assigned its params from one that was already on its way.
+// A request reads the url and the payload at that same point, so the number
+// says exactly which params the request carries.
+let dispatchSeq = 0
+const requestSeqs = new WeakMap<object, number>()
+
+/** The last dispatch number handed out. Read it synchronously. */
+export function currentDispatchSeq(): number {
+  return dispatchSeq
+}
+
+/**
+ * The dispatch number of the request built on `options`. `useFetch` makes one
+ * `options` object per `execute` and every hook in the chain is handed that
+ * same object, so it names the request.
+ */
+export function getRequestDispatchSeq(options: object): number | undefined {
+  return requestSeqs.get(options)
+}
+
+/**
+ * The stamp put on a Response by the wrapped fetch below. The single source
+ * for both halves of the write-gate rule: the dispatch version and whether
+ * the response may record it. `undefined` for a Response that did not come
+ * through the wrapped fetch.
+ */
+export function getDispatchStamp(
+  response: Response | null | undefined,
+): DispatchStamp | undefined {
+  return response ? dispatchStamps.get(response) : undefined
+}
+
 export const useFrappeFetch = createFetch({
   options: {
-    fetch: (...args) => fetch(...args), // required for vitest
+    // Wrapping the global fetch is required for vitest, and stamps each
+    // response with its request's dispatch version.
+    fetch: (input, init) => {
+      // The sequence is taken here, before the request goes out — dispatch
+      // order, not settle order, is what the gate compares. `record` is the
+      // one place the mutating/read rule is decided, so no other module has
+      // to re-derive it from a method string.
+      const stamp = writeGate.next(
+        (init?.method ?? 'GET').toUpperCase() !== 'GET',
+      )
+      return fetch(input, init).then((response) => {
+        dispatchStamps.set(response, stamp)
+        return response
+      })
+    },
     beforeFetch({ options }) {
+      // First hook in the chain, so this runs before `execute` awaits
+      // anything. A per-call `beforeFetch` is chained after it and reads the
+      // number back off `options`.
+      dispatchSeq += 1
+      requestSeqs.set(options, dispatchSeq)
       options.headers = setHeaders(options.headers || {})
       return { options }
     },
@@ -50,12 +118,15 @@ export const useFrappeFetch = createFetch({
         console.groupEnd()
       }
       if (responseData.docs) {
-        let docs = responseData.docs
-        for (let doc of docs) {
-          doc.name = doc.name.toString()
-        }
-        docStore.setDocs(docs)
-        listStore.updateRows(docs)
+        // A response with no stamp did not come from the wrapped fetch above,
+        // so there is no dispatch order to place it in: `LOCAL_WRITE` — the
+        // one answer every store write gives to "no stamp". Unreachable
+        // today; every call site goes through the wrapped fetch. Both stores
+        // get the same stamp, so the docs and the rows of one response are
+        // gated as one write per document.
+        let stamp = getDispatchStamp(ctx.response) ?? LOCAL_WRITE
+        docStore.setDocs(responseData.docs, stamp)
+        listStore.updateRows(responseData.docs, stamp)
       }
       return ctx
     },
@@ -77,9 +148,17 @@ export const useFrappeFetch = createFetch({
         indicator: string
       }
       try {
+        if (!ctx.data) {
+          return ctx
+        }
+
         let errorResponse = JSON.parse(ctx.data)
-        let errors: Array<FrappeError> = errorResponse.errors
-        let error = errors[0] // assuming only one error for now
+        let errors: Array<FrappeError> | undefined = errorResponse.errors
+        let error = errors?.[0] // assuming only one error for now
+        if (!error) {
+          return ctx
+        }
+
         let errorDescription = error.message
           ? `: ${error.message}`
           : error.exception

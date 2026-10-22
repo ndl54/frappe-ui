@@ -1,11 +1,26 @@
 import { reactive, unref } from 'vue'
-import { useCall } from '../useCall/useCall'
+import { useIsolatedCall } from '../useIsolatedCall'
 import { UseCallOptions } from '../useCall/types'
 import { docStore } from '../docStore'
 
-type UseNewDocOptions = Omit<
-  UseCallOptions,
-  'url' | 'method' | 'params' | 'immediate'
+/**
+ * `refetch`, `cacheKey`, and `staleOnError` are left out on purpose (DAT-Q6).
+ *
+ * `params()` reads the reactive `doc`, so `refetch: true` sends an insert on
+ * every edit — one new row per keystroke under autoname — and then `submit()`
+ * sends nothing and rejects. `cacheKey` would replay the last insert's
+ * response as `data` in the next session, before anything was submitted, and
+ * `staleOnError` only works with it.
+ */
+type UseNewDocOptions<T> = Omit<
+  UseCallOptions<any, Partial<T>>,
+  | 'url'
+  | 'method'
+  | 'params'
+  | 'immediate'
+  | 'refetch'
+  | 'cacheKey'
+  | 'staleOnError'
 >
 
 type NewDoc<T> = Partial<
@@ -15,7 +30,7 @@ type NewDoc<T> = Partial<
 export function useNewDoc<T extends object>(
   doctype: string,
   initialValues: NewDoc<T> = {},
-  options: UseNewDocOptions = {},
+  options: UseNewDocOptions<T> = {},
 ) {
   let doc = reactive<NewDoc<T>>(initialValues)
 
@@ -23,7 +38,9 @@ export function useNewDoc<T extends object>(
     name: string
   }
 
-  const out = useCall<DocResponse>({
+  // `useIsolatedCall`, not `useCall`: with one shared call a second submit
+  // aborts the first mid-flight and both resolve off the same ref (#991).
+  const out = useIsolatedCall<DocResponse, Partial<T>>({
     url: `/api/v2/document/${doctype}`,
     method: 'POST',
     params() {
@@ -35,23 +52,54 @@ export function useNewDoc<T extends object>(
       }
       return payload
     },
-    immediate: false,
     ...options,
+    // After the spread, not before it: an untyped caller could otherwise
+    // override either one (DAT-Q6).
+    immediate: false,
+    refetch: false,
+    // The store write lives here, not in `submit()`'s `.then`: this hook is
+    // handed the POST's stamp, so the write records. In the `.then` there is
+    // no stamp to hand it — it would have to claim `LOCAL_WRITE` and never
+    // record, the one store write outside the gate (#1017). Matters when the
+    // caller supplies `name`: a stale earlier-dispatched response for the
+    // same document must not overwrite the insert.
+    onStoreWrite(created: DocResponse, stamp) {
+      docStore.setDoc({ doctype, ...created }, stamp)
+    },
   })
+
+  // Captured before `out.submit` is overwritten below — the new `submit`
+  // calls this one, not `out.submit` (which would then call itself).
+  const callSubmit = out.submit
 
   function submit() {
-    return out
-      .submit()
-      .then((doc) =>
-        docStore
-          .setDoc({ doctype, ...(doc as DocResponse) })
-          .then(() => docStore.getDoc(doctype, doc.name.toString()).value as T),
-      )
+    return callSubmit().then((created) => {
+      const response = created as DocResponse | null
+      if (!response?.name) {
+        // A failed request already rejected upstream (DAT-Q1). This covers
+        // the response that arrives without a `name`.
+        throw (
+          (out.error as Error | null) ?? new Error(`insert ${doctype} failed`)
+        )
+      }
+      // The caller's own response, never the store's copy. The two only
+      // differ when another request's write won the store for this name —
+      // and then the store holds the OTHER caller's document, which is
+      // exactly what this caller must not receive. The store keeps the
+      // winning write; each caller resolves with the doc it created.
+      // `doctype` is merged the same way `onSuccess` merges it for the
+      // store, so the resolved doc keeps the shape callers had before.
+      return { doctype, ...response } as T
+    })
   }
 
-  return reactive({
-    ...out,
-    submit,
-    doc,
-  })
+  // Extend `out` in place rather than spreading it into a new `reactive()`.
+  // `out.data`/`.error`/`.loading`/etc. are refs and computeds that
+  // `reactive()` auto-unwraps on read — `{ ...out }` reads each one once and
+  // freezes it at that value, which silently drops reactivity for the whole
+  // useCall surface this composable re-exposes.
+  return Object.assign(out, { submit, doc }) as Omit<typeof out, 'submit'> & {
+    submit: () => Promise<T>
+    doc: NewDoc<T>
+  }
 }

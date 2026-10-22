@@ -12,7 +12,7 @@ import { withBase } from 'vitepress'
 const componentGroups = {
   "Data Display": {
     component: DataDisplay,
-    list: ["Avatar", "Badge", "ListView"],
+    list: ["Avatar", "Badge"],
   },
 
   "Navigation": {
@@ -27,7 +27,7 @@ const componentGroups = {
   "Forms": {
     component: Forms,
     list: [
-      "Input",
+      "TextInput",
       "FormControl",
       "Select",
       "MultiSelect",
@@ -36,12 +36,11 @@ const componentGroups = {
       "Password",
       "FileUploader",
       "Rating",
-      "TextEditor",
     ],
   },
   "DateTime": {
     component: Datetime,
-    list: ["Calendar", "DatePicker", "MonthPicker", "TimePicker"],
+    list: ["DatePicker", "TimePicker"],
   },
   "Overlays": {
     component: Overlays,
@@ -53,7 +52,6 @@ const componentGroups = {
       "Alert",
       "ErrorMessage",
       "Progress",
-      "CircularProgressBar",
     ],
   },
 
@@ -62,6 +60,8 @@ const componentGroups = {
     list: [
       "Charts",
     ],
+    // The chart family has its own docs section; it is not under /docs/components.
+    links: { Charts: "/docs/charts/overview" },
   },
 };
 </script>
@@ -71,15 +71,15 @@ const componentGroups = {
     <div
       v-for="(components, group) in componentGroups"
       :key="group"
-      class="rounded border border-outline-gray-2 dark:border-0 grid"
+      class="rounded-4 border border-outline-gray-2 dark:border-0 grid"
     >
       <component
         :is="components.component"
-        class="min-h-[130px] bg-surface-gray-2 dark:bg-surface-gray-1 rounded-t"
+        class="min-h-[130px] bg-surface-gray-2 dark:bg-surface-gray-1 rounded-t-4"
       />
 
-      <div class="grid gap-2 p-4 bg-surface-cards rounded-b">
-        <h3 class="text-lg font-semibold text-ink-gray-9">
+      <div class="grid gap-2 p-4 bg-surface-elevation-1 rounded-b-4">
+        <h3 class="text-md font-semibold text-ink-gray-9">
           {{ group }}
         </h3>
 
@@ -87,7 +87,7 @@ const componentGroups = {
           <a
             v-for="x in components.list"
             :key="x"
-            :href='withBase("/docs/components/" + x.toLowerCase())'
+            :href='withBase(components.links?.[x] ?? "/docs/components/" + x.toLowerCase())'
           >
             <Badge size="lg" class="hover:bg-surface-gray-4">
               {{ x }}

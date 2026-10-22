@@ -3,6 +3,7 @@
   import PropsTable from '@/components/Docs/PropsTable.vue'
   import SlotsTable from '@/components/Docs/SlotsTable.vue'
   import EmitsTable from '@/components/Docs/EmitsTable.vue'
+  import ExposedTable from '@/components/Docs/ExposedTable.vue'
 
   const propsData = [
   {
@@ -13,6 +14,19 @@
     default: '"sm"'
   },
   {
+    name: 'padded',
+    description: 'Wraps the control and label in a clickable surface with hover, active and focus states — useful for settings rows and menu items.',
+    required: false,
+    type: 'boolean',
+    default: 'false'
+  },
+  {
+    name: 'controlPosition',
+    description: 'Position of the control relative to the label, along the inline axis (RTL-aware). `start` is the leading side, `end` the trailing side. Defaults to `end`, so the switch trails the label.',
+    required: false,
+    type: '"start" | "end"'
+  },
+  {
     name: 'disabled',
     description: 'Disables the switch and prevents interaction',
     required: false,
@@ -21,17 +35,9 @@
   },
   {
     name: 'icon',
-    description: 'Optional icon rendered alongside the label.\nStrings starting with `lucide-` are rendered via the shared Lucide\nTailwind utility; component values are rendered with `<component :is>`.',
+    description: 'Optional icon rendered alongside the label. Strings starting with `lucide-` are rendered via the shared Lucide Tailwind utility; component values are rendered with `<component :is>`.',
     required: false,
     type: 'string | Component'
-  },
-  {
-    name: 'labelClasses',
-    description: 'Custom classes applied to the label element.',
-    required: false,
-    type: 'string',
-    default: '""',
-    deprecated: 'Use `data-*` styling hooks instead.'
   },
   {
     name: 'label',
@@ -41,19 +47,19 @@
   },
   {
     name: 'description',
-    description: 'Helper text rendered below the input.\nHidden when `error` is set.',
+    description: 'Helper text rendered below the input.\nHidden when `error` is set. A `#description` slot is not: it renders\nbeside the error, and is referenced alongside it.',
     required: false,
     type: 'string'
   },
   {
     name: 'error',
-    description: 'Error message rendered below the input. When set, the control receives\n`aria-invalid="true"` and `data-state="invalid"`. May be either a string\nor an `Error` object whose `messages?: string[]` is rendered as stacked\nlines (with `Error.message` as the fallback).',
+    description: 'Error message rendered below the input. When set, the control receives\n`aria-invalid="true"` and `data-state="invalid"`. Takes a string, an\narray of strings, or an `Error` whose `messages` are rendered as stacked\nlines (with `Error.message` as the fallback). This is the same value\n`ErrorMessage.message` takes. An empty array and an empty string both\nmean no error.',
     required: false,
-    type: 'string | FrappeUIError'
+    type: 'ErrorMessageValue'
   },
   {
     name: 'required',
-    description: 'Marks the field as required. Renders an asterisk next to the label and\nforwards `required` / `aria-required` to the underlying control.',
+    description: 'Marks the field as required. Renders an asterisk next to the label, with\n`sr-only` text that announces it, and forwards `required` /\n`aria-required` to the underlying control where the control\'s role allows\nit. `data-required` is set either way.',
     required: false,
     type: 'boolean'
   },
@@ -92,12 +98,22 @@
     type: '[value: boolean]'
   }
 ]
+
+  const exposedData = [
+  {
+    name: 'focus',
+    description: 'Moves focus to the switch.',
+    type: '(options?: FocusOptions) => void'
+  }
+]
 </script>
+
 ## API Reference
 
-<PropsTable name="Switch" :data="propsData"/> 
+<PropsTable name="Switch" :data="propsData"/>
 
-<SlotsTable :data="slotsData"/> 
+<SlotsTable :data="slotsData"/>
 
-<EmitsTable :data="emitsData"/> 
+<EmitsTable :data="emitsData"/>
 
+<ExposedTable :data="exposedData"/>
